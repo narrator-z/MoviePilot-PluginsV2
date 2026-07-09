@@ -32,11 +32,11 @@ class JackettExtend(_PluginBase):
     # 插件图标
     plugin_icon = "Jackett_A.png"
     # 插件版本
-    plugin_version = "1.3"
+    plugin_version = "1.4"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
-    author_url = "https://github.com/jtcymc"
+    author_url = "https://github.com/narrator-z"
     # 插件配置项ID前缀
     plugin_config_prefix = "jackett_extend_"
     # 加载顺序
