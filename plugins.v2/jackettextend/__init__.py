@@ -32,7 +32,7 @@ class JackettExtend(_PluginBase):
     # 插件版本
     plugin_version = "1.3"
     # 插件作者
-    plugin_author = "jtcymc"
+    plugin_author = "narrator-z"
     # 作者主页
     author_url = "https://github.com/jtcymc"
     # 插件配置项ID前缀
