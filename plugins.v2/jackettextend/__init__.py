@@ -56,7 +56,7 @@ class JackettExtend(_PluginBase):
     _indexers = []
     sites_helper = None
     # 仅用于标识，避免重复注册
-    jackett_domain = "jackett_extend.jtcymc"
+    jackett_domain = "jackett_extend.narrator-z"
 
     def init_plugin(self, config: dict = None):
         """
