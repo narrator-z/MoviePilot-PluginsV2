@@ -3,7 +3,7 @@
     "name": "JackettExtend",
     "description": "扩展检索以支持 Jackett 站点资源",
     "labels": "索引器,Jackett",
-    "version": "1.4",
+    "version": "1.4.1",
     "icon": "Jackett_A.png",
     "author": "narrator-z",
     "level": 1,
@@ -12,7 +12,8 @@
       "v1.1": "修复已知问题",
       "v1.2": "修复已知问题",
       "v1.3" : "适配MoviePilot v2.6.8及以后的版本",
-      "v1.4" : "更新作者信息，自动植入Jackett认证参数"
+      "v1.4" : "更新作者信息，自动植入Jackett认证参数",
+      "v1.4.1": "修复搜索始终为空：默认不再强制 torznab cat=2000/5000 分类过滤（多数公开索引器不支持导致空结果），新增可关闭的「按媒体类型分类过滤」开关"
     }
   },
   "ProwlarrExtend": {
