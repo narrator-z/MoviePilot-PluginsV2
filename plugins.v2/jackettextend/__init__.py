@@ -32,7 +32,7 @@ class JackettExtend(_PluginBase):
     # 插件图标
     plugin_icon = "Jackett_A.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.4.1"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -91,6 +91,7 @@ class JackettExtend(_PluginBase):
             self._password = config.get("password")
             self._enabled = config.get("enabled")
             self._proxy = config.get("proxy")
+            self._use_cat = config.get("use_cat")
             self._onlyonce = config.get("onlyonce")
             self._cron = config.get("cron") or "0 0 */24 * *"
         if not self._enabled:
@@ -162,6 +163,7 @@ class JackettExtend(_PluginBase):
             "host": self._host,
             "api_key": self._api_key,
             "password": self._password,
+            "use_cat": self._use_cat,
         })
 
     def search_torrents(self, site: dict, keyword: str, mtype: Optional[MediaType] = None, page: Optional[int] = 0) -> \
@@ -187,7 +189,6 @@ class JackettExtend(_PluginBase):
             return results
 
         indexer_name = domain.split(".")[-1]
-        categories = self.get_cat(mtype)
 
         try:
             logger.info(f"【{self.plugin_name}】开始检索 Indexer：\"{site.get('name')}\"，关键词：\"{keyword}\"")
@@ -196,8 +197,13 @@ class JackettExtend(_PluginBase):
                 "apikey": self._api_key,
                 "t": "search",
                 "q": keyword,
-                "cat": ",".join(map(str, categories))
             }
+            # 分类过滤：多数公开索引器不支持 torznab 的 cat=2000/5000，
+            # 强制携带会让 Jackett 返回空 <channel> 导致搜索无结果。
+            # 默认关闭；仅当用户确实需要按媒体类型收缩结果时，用插件开关开启。
+            if getattr(self, "_use_cat", False):
+                categories = self.get_cat(mtype)
+                params["cat"] = ",".join(map(str, categories))
             query_string = urlencode(params, quote_via=quote_plus)
             api_url = f"{self._host.rstrip('/')}/api/v2.0/indexers/{indexer_name}/results/torznab/?{query_string}"
 
@@ -474,6 +480,23 @@ class JackettExtend(_PluginBase):
                                             {
                                                 'component': 'VSwitch',
                                                 'props': {
+                                                    'model': 'use_cat',
+                                                    'label': '按媒体类型分类过滤',
+                                                    'hint': '默认关闭。公开索引器大多不支持 torznab cat=2000/5000，开启会导致搜索无结果'
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VCol',
+                                        'props': {
+                                            'cols': 12,
+                                            'md': 6
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'VSwitch',
+                                                'props': {
                                                     'model': 'onlyonce',
                                                     'label': '立即运行一次',
                                                     'hint': '打开后立即运行一次获取索引器列表，否则需要等到预先设置的更新周期才会获取'
@@ -614,12 +637,13 @@ class JackettExtend(_PluginBase):
                     }
                 ]
             }
-        ], {
+        ],         {
             "enabled": False,
             "proxy": False,
             "host": "",
             "api_key": "",
             "password": "",
+            "use_cat": False,
             "cron": "0 0 */24 * *",
             "onlyonce": False
         }
