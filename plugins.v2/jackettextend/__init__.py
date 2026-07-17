@@ -32,7 +32,7 @@ class JackettExtend(_PluginBase):
     # 插件图标
     plugin_icon = "Jackett_A.png"
     # 插件版本
-    plugin_version = "1.4.1"
+    plugin_version = "1.4.2"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -188,7 +188,12 @@ class JackettExtend(_PluginBase):
             logger.warning(f"【{self.plugin_name}】站点域名无法解析")
             return results
 
-        indexer_name = domain.split(".")[-1]
+        # Jackett 的 torznab 搜索端点对索引器 id 大小写敏感，必须使用 API 返回的
+        # id 字段（全小写，如 crackingpatching），而不能用 name（大写显示名，如
+        # CrackingPatching）。站点标识可能来自插件自动注册（小写 id）或用户在站点
+        # 管理手动添加（可能误用大写 name），统一转小写以匹配 Jackett 实际接受的 id，
+        # 否则会触发 "Unknown indexer" -> HTTP 500 -> 搜索始终为空。
+        indexer_name = domain.split(".")[-1].lower()
 
         try:
             logger.info(f"【{self.plugin_name}】开始检索 Indexer：\"{site.get('name')}\"，关键词：\"{keyword}\"")
