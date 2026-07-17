@@ -17,6 +17,18 @@
       "v1.4.2": "修复 torznab 索引器 id 大小写敏感问题：强制小写匹配 Jackett 实际接受的 id，解决 Unknown indexer(HTTP 500) 导致搜索为空"
     }
   },
+  "StuckDownloadGuard": {
+    "name": "StuckDownloadGuard",
+    "description": "监控下载任务，长时间无进度则降级排至队尾，连续无效则停止并重新搜索",
+    "labels": "下载管理,监控,队列",
+    "version": "1.0.0",
+    "icon": "Qbittorrent_A.png",
+    "author": "narrator-z",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本：监控下载任务，进度≈0且速度为0（不含排队时间）持续设定时长后降级排至队尾；连续多次无效则停止、清理并重新搜索（订阅来源）"
+    }
+  },
   "ProwlarrExtend": {
     "name": "ProwlarrExtend",
     "description": "扩展检索以支持Prowlarr站点资源",
