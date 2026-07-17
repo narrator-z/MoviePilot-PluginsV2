@@ -326,6 +326,14 @@ class JackettExtend(_PluginBase):
         """
         return {
             "search_torrents": self.search_torrents,
+            # MoviePilot V2 的搜索 UI 走异步链路：
+            #   search_by_title -> async_search_by_title -> __async_search_all_sites
+            #   -> async_search_torrents -> async_run_module("async_search_torrents")
+            # 若只注册 "search_torrents"（同步方法名），异步链路在
+            # __async_execute_plugin_modules 中按 "async_search_torrents" 查找时会落空，
+            # 插件劫持永不触发，最终由系统 torznab 不带 apikey 直查 -> 永远返回空。
+            # 因此必须同时注册异步方法名（复用同一同步实现，由引擎在异步路径用线程池执行）。
+            "async_search_torrents": self.search_torrents,
         }
 
     def get_api(self) -> List[Dict[str, Any]]:
