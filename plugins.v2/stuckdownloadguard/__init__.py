@@ -60,7 +60,7 @@ class StuckDownloadGuard(_PluginBase):
     # 插件图标
     plugin_icon = "Qbittorrent_A.png"
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -219,6 +219,8 @@ class StuckDownloadGuard(_PluginBase):
         thost = parsed.hostname or host
         tport = cfg.get("port") or parsed.port or 9091
         tpath = parsed.path or "/transmission/rpc"
+        if not tpath or tpath == "/":
+            tpath = "/transmission/rpc"
         client = Client(
             host=thost,
             port=tport,
