@@ -21,13 +21,14 @@
     "name": "StuckDownloadGuard",
     "description": "监控下载任务，长时间无进度则降级排至队尾，连续无效则停止并重新搜索",
     "labels": "下载管理,监控,队列",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "icon": "Qbittorrent_A.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
       "v1.0.0": "初始版本：监控下载任务，进度≈0且速度为0（不含排队时间）持续设定时长后降级排至队尾；连续多次无效则停止、清理并重新搜索（订阅来源）",
-      "v1.0.1": "修复 Transmission 下载器初始化参数错误（transmission_rpc.Client 不接受 user= 参数，改为已有 username=），修复后 tm 下载器可正常连接"
+      "v1.0.1": "修复 Transmission 下载器初始化参数错误（transmission_rpc.Client 不接受 user= 参数，改为已有 username=），修复后 tm 下载器可正常连接",
+      "v1.0.2": "补充回 Client 的 username= 参数（1.0.1 误删导致 tm 认证失败 require auth），tm 下载器恢复传用户名密码"
     }
   },
   "ProwlarrExtend": {

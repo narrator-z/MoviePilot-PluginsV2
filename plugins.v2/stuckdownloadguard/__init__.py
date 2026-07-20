@@ -60,7 +60,7 @@ class StuckDownloadGuard(_PluginBase):
     # 插件图标
     plugin_icon = "Qbittorrent_A.png"
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -223,6 +223,7 @@ class StuckDownloadGuard(_PluginBase):
             host=thost,
             port=tport,
             path=tpath,
+            username=cfg.get("username"),
             password=cfg.get("password"),
             protocol=protocol,
         )
