@@ -54,13 +54,13 @@ _PROGRESS_ZERO_THRESHOLD = 0.1
 
 class StuckDownloadGuard(_PluginBase):
     # 插件名称
-    plugin_name = "StuckDownloadGuard"
+    plugin_name = "下载守卫"
     # 插件描述
     plugin_desc = "监控下载任务，长时间无进度则降级排至队尾，连续无效则停止并重新搜索"
     # 插件图标
     plugin_icon = "Qbittorrent_A.png"
     # 插件版本
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
