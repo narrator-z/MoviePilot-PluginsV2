@@ -223,7 +223,6 @@ class StuckDownloadGuard(_PluginBase):
             host=thost,
             port=tport,
             path=tpath,
-            user=cfg.get("username"),
             password=cfg.get("password"),
             protocol=protocol,
         )
