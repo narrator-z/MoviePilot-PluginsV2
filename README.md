@@ -84,6 +84,26 @@
   - 「清理时删除文件」默认关闭，避免误删已下载文件，请谨慎开启
   - 卡顿计时会在「排队中」状态暂停（不计入排队时间），并在恢复下载或任务完成时清零
 
+#### ChineseSubFinder
+- **插件名称**: ChineseSubFinder
+- **插件描述**: 整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）
+- **插件版本**: 1.0.0
+- **插件作者**: narrator-z
+- **作者主页**: https://github.com/narrator-z
+- **主要功能**:
+  - 监听 MoviePilot 整理入库事件（TransferComplete），自动通知 ChineseSubFinder 下载中文字幕
+  - 支持本地路径 → 远端路径映射（适配 MoviePilot 与 CSF 容器路径不一致的场景）
+  - 提供「测试连接」按钮，一次性校验服务器可达性与 API Token 有效性
+  - 调用失败时记录 HTTP 状态码与 CSF 返回的具体原因（如 AccessToken Error / api_key_enabled == false / physical video file not found），并通过通知推送
+- **使用方法**:
+  1. 在插件配置页面填写 CSF 服务器地址（含端口，如 `http://192.168.1.10:19035`）
+  2. **API Token 填写 ChineseSubFinder 设置中的「外部 API Token」**，不是 Web 登录密码；需在 CSF 设置中开启外部 API 并设置一个 ApiToken
+  3. 若 MoviePilot 与 CSF 看到的媒体路径前缀不同，填写「本地路径」与「远端路径」做替换
+  4. 点击插件 API 中的「测试连接」验证地址与 Token，再启用插件
+- **注意事项**:
+  - 官方同名插件报错「调用 ChineseSubFinder API 失败」的根因：CSF 的 `/api/v1` 外部接口由 `CheckApiAuth` 保护，要求 `Authorization: Bearer <ApiToken>`（即 CSF 外部 API Token），填成 Web 登录密码或留空会返回 HTTP 401，本插件会在日志/通知中明确指出该原因
+  - 若返回「physical video file not found」，说明该文件在 CSF 容器侧不存在，需检查路径映射
+
 ---
 
 如需扩展更多 BT 站点或自定义插件，请参考 `plugins.v2` 目录下的插件实现方式。

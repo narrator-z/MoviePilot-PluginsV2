@@ -33,6 +33,18 @@
       "v1.0.4": "显示名由 StuckDownloadGuard 改为中文「下载守卫」，更简洁"
     }
   },
+  "ChineseSubFinder": {
+    "name": "ChineseSubFinder",
+    "description": "整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）",
+    "labels": "字幕,下载,ChineseSubFinder",
+    "version": "1.0.0",
+    "icon": "chinesesubfinder.png",
+    "author": "narrator-z",
+    "level": 1,
+    "history": {
+      "v1.0.0": "基于 jxxghp 同名插件重写：修复「调用 ChineseSubFinder API 失败」长期报错——外部 /api/v1 接口由 CheckApiAuth 保护，需 Authorization: Bearer <ApiToken>（CSF 设置中的外部 API Token，非 Web 登录密码），401 即报错根因；新增连接测试按钮、失败原因诊断（HTTP 码+message）、失败通知、修复蓝光表达式错误、移除失败缓存"
+    }
+  },
   "ProwlarrExtend": {
     "name": "ProwlarrExtend",
     "description": "扩展检索以支持Prowlarr站点资源",
