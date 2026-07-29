@@ -32,7 +32,7 @@ class JackettExtend(_PluginBase):
     # 插件图标
     plugin_icon = "Jackett_A.png"
     # 插件版本
-    plugin_version = "1.4.2"
+    plugin_version = "6.0.0"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页

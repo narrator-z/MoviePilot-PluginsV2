@@ -3,7 +3,7 @@
     "name": "JackettExtend",
     "description": "扩展检索以支持 Jackett 站点资源",
     "labels": "索引器,Jackett",
-    "version": "1.4.2",
+    "version": "6.0.0",
     "icon": "Jackett_A.png",
     "author": "narrator-z",
     "level": 1,
@@ -14,7 +14,8 @@
       "v1.3" : "适配MoviePilot v2.6.8及以后的版本",
       "v1.4" : "更新作者信息，自动植入Jackett认证参数",
       "v1.4.1": "修复搜索始终为空：默认不再强制 torznab cat=2000/5000 分类过滤（多数公开索引器不支持导致空结果），新增可关闭的「按媒体类型分类过滤」开关",
-      "v1.4.2": "修复 torznab 索引器 id 大小写敏感问题：强制小写匹配 Jackett 实际接受的 id，解决 Unknown indexer(HTTP 500) 导致搜索为空"
+      "v1.4.2": "修复 torznab 索引器 id 大小写敏感问题：强制小写匹配 Jackett 实际接受的 id，解决 Unknown indexer(HTTP 500) 导致搜索为空",
+      "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件按版本去重覆盖，确保本修复版在插件市场胜出"
     }
   },
   "StuckDownloadGuard": {
@@ -37,19 +38,20 @@
     "name": "ChineseSubFinder",
     "description": "整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）",
     "labels": "字幕,下载,ChineseSubFinder",
-    "version": "1.0.0",
+    "version": "6.0.0",
     "icon": "chinesesubfinder.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
-      "v1.0.0": "基于 jxxghp 同名插件重写：修复「调用 ChineseSubFinder API 失败」长期报错——外部 /api/v1 接口由 CheckApiAuth 保护，需 Authorization: Bearer <ApiToken>（CSF 设置中的外部 API Token，非 Web 登录密码），401 即报错根因；新增连接测试按钮、失败原因诊断（HTTP 码+message）、失败通知、修复蓝光表达式错误、移除失败缓存"
+      "v1.0.0": "基于 jxxghp 同名插件重写：修复「调用 ChineseSubFinder API 失败」长期报错——外部 /api/v1 接口由 CheckApiAuth 保护，需 Authorization: Bearer <ApiToken>（CSF 设置中的外部 API Token，非 Web 登录密码），401 即报错根因；新增连接测试按钮、失败原因诊断（HTTP 码+message）、失败通知、修复蓝光表达式错误、移除失败缓存",
+      "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件（ChineseSubFinder 1.1）按版本去重覆盖，确保本修复版在插件市场胜出"
     }
   },
   "ProwlarrExtend": {
     "name": "ProwlarrExtend",
     "description": "扩展检索以支持Prowlarr站点资源",
     "labels": "索引器,Prowlarr",
-    "version": "1.4",
+    "version": "6.0.0",
     "icon": "Prowlarr.png",
     "author": "narrator-z",
     "level": 1,
@@ -59,7 +61,8 @@
       "v1.1.1": "修复链接取值",
       "v1.2": "修复已知问题",
       "v1.3" : "适配MoviePilot v2.6.8及以后的版本",
-      "v1.4" : "更新作者信息"
+      "v1.4" : "更新作者信息",
+      "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件按版本去重覆盖，确保本修复版在插件市场胜出"
     }
   }
 }
