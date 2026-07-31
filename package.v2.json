@@ -65,5 +65,17 @@
       "v1.4" : "更新作者信息",
       "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件按版本去重覆盖，确保本修复版在插件市场胜出"
     }
+  },
+  "NeoDBSource": {
+    "name": "NeoDB源",
+    "description": "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/图书/游戏/音乐）。",
+    "labels": "数据源,NeoDB,探索,推荐,识别",
+    "version": "1.0.0",
+    "icon": "neodb.png",
+    "author": "narrator-z",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本：对标 imdbsource，提供 NeoDB 探索数据源（关键词+类别搜索）、推荐数据源（热门游戏/科幻电影/动画剧集）、媒体识别增强（按名称回退搜索并解析 TMDB ID），以及 neodb: 媒体ID回链转换；支持自定义 NeoDB 实例地址与代理"
+    }
   }
 }
