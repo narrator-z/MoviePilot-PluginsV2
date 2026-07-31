@@ -32,7 +32,7 @@ from app.schemas import (
     RecommendMediaSource,
     RecommendSourceEventData,
 )
-from app.schemas.types import ChainEventType, MediaType
+from app.schemas.types import ChainEventType, EventType, MediaType
 from app.utils.http import AsyncRequestUtils, RequestUtils
 
 from .neodbhelper import NeoDBHelper
