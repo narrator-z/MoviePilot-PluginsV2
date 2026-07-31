@@ -70,11 +70,12 @@
     "name": "NeoDB源",
     "description": "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/图书/游戏/音乐）。",
     "labels": "数据源,NeoDB,探索,推荐,识别",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "neodb.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
+      "v1.0.1": "修复探索页 NeoDB 数据源空白：未提供关键词时改为返回该分类的 NeoDB 热门榜单（movie/tv/book/game/music 均公开可用，anime 归入 tv），避免点进标签即空白；推荐数据源逻辑不变。注意插件默认禁用，需在 MoviePilot 插件页手动启用后探索页/推荐页才会出现 NeoDB 标签页",
       "v1.0.0": "初始版本：对标 imdbsource，提供 NeoDB 探索数据源（关键词+类别搜索）、推荐数据源（热门游戏/科幻电影/动画剧集）、媒体识别增强（按名称回退搜索并解析 TMDB ID），以及 neodb: 媒体ID回链转换；支持自定义 NeoDB 实例地址与代理"
     }
   }

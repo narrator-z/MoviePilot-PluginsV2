@@ -70,10 +70,12 @@ class NeoDBHelper:
             return data
         return None
 
-    def trending_games(self, page: int = 1) -> List[dict]:
-        """热门游戏（公开，无需鉴权）。"""
+    def trending(self, category: str = "game", page: int = 1) -> List[dict]:
+        """获取某分类热门榜单（公开，无需鉴权）。category 支持 movie/tv/book/game/music；anime 归入 tv。"""
+        if category == "anime":
+            category = "tv"
         data = RequestUtils(accept_type="application/json", proxies=self.proxies).get_json(
-            f"{self.base_url}/api/trending/game/", params={"page": page}
+            f"{self.base_url}/api/trending/{category}/", params={"page": page}
         )
         if isinstance(data, list):
             return data
@@ -107,9 +109,12 @@ class NeoDBHelper:
             return data
         return None
 
-    async def async_trending_games(self, page: int = 1) -> List[dict]:
+    async def async_trending(self, category: str = "game", page: int = 1) -> List[dict]:
+        """异步获取某分类热门榜单（公开，无需鉴权）。category 支持 movie/tv/book/game/music；anime 归入 tv。"""
+        if category == "anime":
+            category = "tv"
         data = await AsyncRequestUtils(accept_type="application/json", proxies=self.proxies).get_json(
-            f"{self.base_url}/api/trending/game/", params={"page": page}
+            f"{self.base_url}/api/trending/{category}/", params={"page": page}
         )
         if isinstance(data, list):
             return data

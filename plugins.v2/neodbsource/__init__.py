@@ -331,14 +331,18 @@ class NeoDBSource(_PluginBase):
         """
         探索数据源：搜索 NeoDB 目录。
         :param category: movie / tv / book / game / music / anime
-        :param q: 搜索关键词（探索页搜索框传入）
+        :param q: 搜索关键词（探索页搜索框传入）；为空时返回该分类的热门榜单，避免探索页空白
         :param page: 页码
         """
-        if not self._helper or not q:
+        if not self._helper:
             return []
         # anime 在 NeoDB 中归为 tv
         api_category = "tv" if category == "anime" else category
-        items = await self._helper.async_search(query=q, category=api_category, page=page)
+        if q:
+            items = await self._helper.async_search(query=q, category=api_category, page=page)
+        else:
+            # 未提供关键词：返回该分类热门榜单作为兜底
+            items = await self._helper.async_trending(api_category, page=page)
         medias: List[MediaInfo] = []
         for it in items:
             try:
@@ -355,9 +359,7 @@ class NeoDBSource(_PluginBase):
         """热门游戏榜单（公开接口，无需鉴权）。"""
         if not self._helper:
             return []
-        if category != "game":
-            return []
-        items = await self._helper.async_trending_games(page=page)
+        items = await self._helper.async_trending(category or "game", page=page)
         medias: List[MediaInfo] = []
         for it in items:
             try:
