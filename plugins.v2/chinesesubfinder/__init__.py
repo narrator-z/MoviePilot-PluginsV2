@@ -52,7 +52,7 @@ class ChineseSubFinder(_PluginBase):
     # 插件图标
     plugin_icon = "chinesesubfinder.png"
     # 插件版本
-    plugin_version = "6.0.0"
+    plugin_version = "6.0.1"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -90,6 +90,12 @@ class ChineseSubFinder(_PluginBase):
             if self._enabled and not self._api_key:
                 logger.warning("【ChineseSubFinder】已启用但未配置 API Token，"
                                "请在 CSF 设置中开启外部 API 并填写其 ApiToken（不是 Web 登录密码）")
+            # 启动日志：确认配置已加载，便于排查“没生效/无日志”问题
+            if self._enabled:
+                logger.info("【字幕守卫】初始化完成：已启用，host=%s，将监控入库事件并通知 CSF"
+                            % (self._host or "(未配置)"))
+            else:
+                logger.info("【字幕守卫】初始化完成：未启用（如需自动通知 CSF，请在设置中开启“启用插件”并保存）")
 
     @staticmethod
     def __normalize_host(host: str) -> str:
@@ -330,25 +336,52 @@ class ChineseSubFinder(_PluginBase):
         """
         整理入库完成后，通知 ChineseSubFinder 下载字幕。
         """
-        if not self._enabled or not self._host or not self._api_key:
+        # 每个关卡均输出可见日志，避免“没生效却无任何日志”难以排查
+        if not event or not getattr(event, "event_data", None):
+            logger.warning("【字幕守卫】收到入库事件，但事件数据为空，已跳过")
             return
-        item = event.event_data
-        if not item:
+        if not self._enabled:
+            logger.warning("【字幕守卫】收到入库事件，但插件未启用"
+                           "（请在插件设置中开启“启用插件”并保存），已跳过")
+            return
+        if not self._host or not self._api_key:
+            logger.warning("【字幕守卫】收到入库事件，但服务器地址或 API Token 未配置"
+                           "（请填写 host/api_key 并保存），已跳过")
             return
 
+        item = event.event_data
         item_media: MediaInfo = item.get("mediainfo")
         item_transfer: TransferInfo = item.get("transferinfo")
         if not item_media or not item_transfer:
+            logger.warning("【字幕守卫】入库事件缺少 mediainfo/transferinfo，已跳过")
             return
 
+        # 目标路径：优先取整理后的文件项，其次用 file_list_new 推导目录
+        # （TransferInfo 在 v2.15.x 没有 is_bluray / target_path 字段，需自行推导）
+        item_dest = None
+        target_item = getattr(item_transfer, "target_item", None)
+        if target_item and getattr(target_item, "path", None):
+            item_dest = Path(str(target_item.path))
+        elif item_transfer.file_list_new:
+            item_dest = Path(str(item_transfer.file_list_new[0])).parent
+
+        # 蓝光原盘判定：路径含 BDMV 即视为蓝光
+        item_bluray = bool(item_dest) and "BDMV" in str(item_dest).upper()
         item_type = item_media.type
-        item_bluray = item_transfer.is_bluray
-        item_dest: Path = item_transfer.target_path
-        item_file_list = item_transfer.file_list_new or []
+        item_file_list = [str(p) for p in (item_transfer.file_list_new or [])]
 
         if item_bluray:
-            # 蓝光原盘：CSF 对蓝光跳过文件存在性检查，直接传目录路径并标记 is_bluray
-            item_file_list = [str(item_dest)]
+            # 蓝光原盘：直接传目录路径并标记 is_bluray，CSF 会跳过文件存在性检查
+            if item_dest:
+                item_file_list = [str(item_dest)]
+
+        if not item_file_list:
+            logger.warning("【字幕守卫】入库事件未包含任何目标文件（file_list_new 为空），已跳过")
+            return
+
+        title = getattr(item_media, "title_year", "") or ""
+        logger.info("【字幕守卫】收到入库事件：%s (type=%s, bluray=%s, files=%d)"
+                    % (title, item_type, item_bluray, len(item_file_list)))
 
         for file_path in item_file_list:
             file_path = str(file_path)

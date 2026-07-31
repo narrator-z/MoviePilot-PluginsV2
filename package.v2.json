@@ -38,13 +38,14 @@
     "name": "ChineseSubFinder",
     "description": "整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）",
     "labels": "字幕,下载,ChineseSubFinder",
-    "version": "6.0.0",
+    "version": "6.0.1",
     "icon": "chinesesubfinder.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
       "v1.0.0": "基于 jxxghp 同名插件重写：修复「调用 ChineseSubFinder API 失败」长期报错——外部 /api/v1 接口由 CheckApiAuth 保护，需 Authorization: Bearer <ApiToken>（CSF 设置中的外部 API Token，非 Web 登录密码），401 即报错根因；新增连接测试按钮、失败原因诊断（HTTP 码+message）、失败通知、修复蓝光表达式错误、移除失败缓存",
-      "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件（ChineseSubFinder 1.1）按版本去重覆盖，确保本修复版在插件市场胜出"
+      "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件（ChineseSubFinder 1.1）按版本去重覆盖，确保本修复版在插件市场胜出",
+      "v6.0.1": "修复“没生效且无日志”：TransferInfo 在 v2.15.x 无 is_bluray/target_path 字段导致属性访问崩溃或静默失败；改为从 target_item/file_list_new 推导目标路径、按 BDMV 判定蓝光；并在每个静默关卡加可见日志，便于排查"
     }
   },
   "ProwlarrExtend": {
