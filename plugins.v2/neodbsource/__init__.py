@@ -2,23 +2,22 @@
 NeoDBSource —— 让 MoviePilot 的探索、推荐与媒体识别支持 NeoDB 数据源。
 
 功能对标 wumode/MoviePilot-Plugins 的 imdbsource：
-1. 探索数据源（DiscoverSource）：在「探索」页提供 NeoDB 目录搜索（电影/剧集/图书/游戏/音乐/动画）。
-2. 推荐数据源（RecommendSource）：在「推荐」页提供 NeoDB 热门游戏、科幻电影、动画剧集等列表。
-3. 媒体识别增强（recognize_media）：当系统无法通过 TMDB/豆瓣等识别时，回退到 NeoDB 按名称搜索，
-   并从 external_resources 解析出 tmdb_id 以帮助命中。
-4. 媒体ID转换（MediaRecognizeConvert）：支持 `neodb:<category>.<uuid>` 形式的媒体ID回链到 TMDB。
+1. 探索数据源（DiscoverSource）：在「探索」页提供 NeoDB 目录搜索（电影/剧集/动画）。
+2. 推荐数据源（RecommendSource）：在「推荐」页提供 NeoDB 热门榜单列表。
+3. 媒体ID转换与点击识别（MediaRecognizeConvert + recognize_media 模块）：
+   - 点击探索页中的 NeoDB 条目时，以 `neodb:<category>.<uuid>` 为媒体ID，
+     由本插件直接回查 NeoDB 详情并构造 MediaInfo，无需依赖「媒体识别」子开关；
+   - 若条目带有 TMDB/豆瓣外链，则转换为对应 ID 以获得完整详情。
 
-NeoDB 公开 API 无需鉴权即可搜索/查看目录与热门游戏；如需登录态的收藏/动态接口，可后续扩展。
+NeoDB 公开 API 无需鉴权即可搜索/查看目录与热门榜单；如需登录态的收藏/动态接口，可后续扩展。
 
 参考：
 - https://github.com/wumode/MoviePilot-Plugins  （imdbsource 插件结构）
 - https://neodb.social/developer/                （NeoDB API 文档）
 """
 
-import inspect
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.chain import ChainBase
 from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import Event, eventmanager
@@ -42,11 +41,11 @@ class NeoDBSource(_PluginBase):
     # 插件名称
     plugin_name = "NeoDB源"
     # 插件描述
-    plugin_desc = "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/图书/游戏/音乐）。"
+    plugin_desc = "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/动画）。"
     # 插件图标
     plugin_icon = "neodb.png"
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -61,82 +60,18 @@ class NeoDBSource(_PluginBase):
     # 插件配置
     _enabled: bool = False
     _proxy: bool = False
-    _recognize_media: bool = False
-    _recognition_mode: str = "auxiliary"
     _neodb_url: str = "https://neodb.social"
 
     # 私有属性
     _helper: NeoDBHelper = None
-    _original_method: Optional[Callable] = None
-    _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
-
-    @staticmethod
-    def _extract_method_kwargs(method: Optional[Callable], chain_self, args: tuple, kwargs: dict) -> dict:
-        if not method:
-            return dict(kwargs)
-        try:
-            signature = inspect.signature(method)
-            bound = signature.bind_partial(chain_self, *args, **kwargs)
-            arguments = dict(bound.arguments)
-            first_param = next(iter(signature.parameters), None)
-            if first_param:
-                arguments.pop(first_param, None)
-            return arguments
-        except TypeError:
-            arguments = dict(kwargs)
-            if args:
-                arguments.setdefault("meta", args[0])
-            if len(args) > 1:
-                arguments.setdefault("mtype", args[1])
-            return arguments
 
     # ------------------------------------------------------------------ #
     # 生命周期
     # ------------------------------------------------------------------ #
     def init_plugin(self, config: dict = None):
-        plugin_instance: NeoDBSource = self
-
-        def patched_recognize_media(chain_self, *args, **kwargs):
-            if not plugin_instance._original_method:
-                return None
-            result = plugin_instance._original_method(chain_self, *args, **kwargs)
-            if result is None and NeoDBSource._enabled and NeoDBSource._recognize_media:
-                logger.info(f"通过插件 {NeoDBSource.plugin_name} 执行：recognize_media ...")
-                plugin_kwargs = plugin_instance._extract_method_kwargs(
-                    plugin_instance._original_method, chain_self, args, kwargs
-                )
-                meta = plugin_kwargs.pop("meta", None)
-                mtype = plugin_kwargs.pop("mtype", None)
-                return plugin_instance.recognize_media(meta=meta, mtype=mtype, **plugin_kwargs)
-            return result
-
-        async def patched_async_recognize_media(chain_self, *args, **kwargs):
-            if not plugin_instance._original_async_method:
-                return None
-            result = await plugin_instance._original_async_method(chain_self, *args, **kwargs)
-            if result is None and NeoDBSource._enabled and NeoDBSource._recognize_media:
-                logger.info(f"通过插件 {NeoDBSource.plugin_name} 执行：async_recognize_media ...")
-                plugin_kwargs = plugin_instance._extract_method_kwargs(
-                    plugin_instance._original_async_method, chain_self, args, kwargs
-                )
-                meta = plugin_kwargs.pop("meta", None)
-                mtype = plugin_kwargs.pop("mtype", None)
-                return await plugin_instance.async_recognize_media(meta=meta, mtype=mtype, **plugin_kwargs)
-            return result
-
-        setattr(patched_recognize_media, "_patched_by", id(self))
-        if not getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self):
-            self._original_method = getattr(ChainBase, "recognize_media", None)
-
-        setattr(patched_async_recognize_media, "_patched_by", id(self))
-        if not getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self):
-            self._original_async_method = getattr(ChainBase, "async_recognize_media", None)
-
         if config:
             self._enabled = bool(config.get("enabled"))
             self._proxy = bool(config.get("proxy"))
-            self._recognize_media = bool(config.get("recognize_media"))
-            self._recognition_mode = config.get("recognition_mode") or "auxiliary"
             self._neodb_url = (config.get("neodb_url") or "https://neodb.social").rstrip("/")
             self._update_config()
 
@@ -145,48 +80,38 @@ class NeoDBSource(_PluginBase):
             proxies=settings.PROXY if self._proxy else None,
         )
 
-        # 允许 NeoDB 封面域名加载
+        # 允许 NeoDB 封面域名加载（公网域名本就会被图片代理放行，
+        # 这里再显式加入白名单，避免个别网络环境下被拦）
         for domain in ("neodb.social", "movie.douban.com", "themoviedb.org", "image.tmdb.org"):
             if domain not in settings.SECURITY_IMAGE_DOMAINS:
                 settings.SECURITY_IMAGE_DOMAINS.append(domain)
 
-        if self._enabled:
-            if self._recognize_media and self._recognition_mode == "auxiliary":
-                if not (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self)):
-                    ChainBase.recognize_media = patched_recognize_media
-                if not getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self):
-                    ChainBase.async_recognize_media = patched_async_recognize_media
-            else:
-                self._restore_original()
-        else:
-            self.stop_service()
+        # 探索/推荐/点击识别所需的模块在 get_module() 中按需注册，无需在此打补丁
 
     def get_state(self) -> bool:
         return self._enabled
 
     def stop_service(self):
-        self._restore_original()
-
-    def _restore_original(self):
-        if getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self) and self._original_method:
-            ChainBase.recognize_media = self._original_method
-        if getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self) and self._original_async_method:
-            ChainBase.async_recognize_media = self._original_async_method
+        # 模块随插件启停由 ModuleManager 依据 get_module() 自动注册/注销
+        pass
 
     def get_module(self) -> Dict[str, Any]:
-        modules = {}
-        if self._recognize_media and self._recognition_mode == "hijacking":
-            modules["async_recognize_media"] = self.async_recognize_media
-            modules["recognize_media"] = self.recognize_media
-        return modules
+        """
+        注册媒体识别模块，使点击探索页 NeoDB 条目（mediaid 形如 neodb:<category>.<uuid>）
+        能被本插件直接识别，只要插件处于启用状态即可，不依赖任何子开关。
+        """
+        if not self._enabled:
+            return {}
+        return {
+            "async_recognize_media": self.async_recognize_media,
+            "recognize_media": self.recognize_media,
+        }
 
     def _update_config(self):
         self.update_config(
             {
                 "enabled": self._enabled,
                 "proxy": self._proxy,
-                "recognize_media": self._recognize_media,
-                "recognition_mode": self._recognition_mode,
                 "neodb_url": self._neodb_url,
             }
         )
@@ -204,40 +129,16 @@ class NeoDBSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {"component": "VSwitch", "props": {"model": "enabled", "label": "启用插件"}}
                                 ],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {"component": "VSwitch", "props": {"model": "proxy", "label": "使用代理服务器"}}
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {"component": "VSwitch", "props": {"model": "recognize_media", "label": "媒体识别"}}
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "recognition_mode",
-                                            "label": "媒体识别工作模式",
-                                            "items": [
-                                                {"title": "仅当系统无法识别", "value": "auxiliary"},
-                                                {"title": "正常（劫持）", "value": "hijacking"},
-                                            ],
-                                        },
-                                    }
                                 ],
                             },
                         ],
@@ -275,8 +176,9 @@ class NeoDBSource(_PluginBase):
                                             "type": "info",
                                             "variant": "tonal",
                                             "title": "关于 NeoDB",
-                                            "text": "NeoDB 是开放的书籍/影视/游戏/音乐社交书目库。本插件使用其公开 API 提供探索与推荐；"
-                                            "电影/剧集会尝试解析 TMDB ID 以获得完整详情，图书/游戏/音乐以 NeoDB 数据直接展示。",
+                                            "text": "NeoDB 是开放的书籍/影视/游戏/音乐社交书目库。本插件使用其公开 API 提供"
+                                            "电影/剧集/动画的探索与推荐；电影/剧集会尝试解析 TMDB/豆瓣 ID 以获得完整详情，"
+                                            "无外链的条目以 NeoDB 数据直接展示（可浏览详情，订阅需有 TMDB/豆瓣 ID）。",
                                         },
                                     }
                                 ],
@@ -288,8 +190,6 @@ class NeoDBSource(_PluginBase):
         ], {
             "enabled": False,
             "proxy": False,
-            "recognize_media": False,
-            "recognition_mode": "auxiliary",
             "neodb_url": "https://neodb.social",
         }
 
@@ -310,15 +210,15 @@ class NeoDBSource(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "NeoDB 探索数据源",
-                "description": "按关键词与类别搜索 NeoDB 目录",
+                "description": "按关键词、类别、类型与排序搜索 NeoDB 目录",
             },
             {
                 "path": "/neodb-trending",
                 "endpoint": self.neodb_trending,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "NeoDB 热门游戏",
-                "description": "获取 NeoDB 热门游戏榜单",
+                "summary": "NeoDB 热门榜单",
+                "description": "获取 NeoDB 热门榜单（电影/剧集/动画）",
             },
         ]
 
@@ -326,12 +226,16 @@ class NeoDBSource(_PluginBase):
         self,
         category: str = "movie",
         q: Optional[str] = None,
+        mtype: Optional[str] = None,
+        sort: Optional[str] = None,
         page: int = 1,
     ) -> List[dict]:
         """
-        探索数据源：搜索 NeoDB 目录。
-        :param category: movie / tv / book / game / music / anime
-        :param q: 搜索关键词（探索页搜索框传入）；为空时返回该分类的热门榜单，避免探索页空白
+        探索数据源：搜索 / 热门 NeoDB 目录，并支持按类型与排序二次筛选。
+        :param category: movie / tv / anime（anime 归为 tv）
+        :param q: 搜索关键词；为空时返回该分类热门榜单，避免探索页空白
+        :param mtype: 子类型筛选（Movie / TVShow / TVSeason / all）
+        :param sort: hot（默认，保持原顺序）/ rating（按评分降序）
         :param page: 页码
         """
         if not self._helper:
@@ -341,8 +245,20 @@ class NeoDBSource(_PluginBase):
         if q:
             items = await self._helper.async_search(query=q, category=api_category, page=page)
         else:
-            # 未提供关键词：返回该分类热门榜单作为兜底
             items = await self._helper.async_trending(api_category, page=page)
+
+        # 类型二次筛选（客户端，基于 NeoDB 条目的 type 字段）
+        if mtype and mtype != "all":
+            items = [it for it in items if it.get("type") == mtype]
+
+        # 排序
+        if sort == "rating":
+            items = sorted(
+                items,
+                key=lambda x: (x.get("rating") or 0),
+                reverse=True,
+            )
+
         medias: List[MediaInfo] = []
         for it in items:
             try:
@@ -353,13 +269,14 @@ class NeoDBSource(_PluginBase):
 
     async def neodb_trending(
         self,
-        category: str = "game",
+        category: str = "movie",
         page: int = 1,
     ) -> List[dict]:
-        """热门游戏榜单（公开接口，无需鉴权）。"""
+        """热门榜单（公开接口，无需鉴权）。category 支持 movie/tv/anime（anime 归 tv）。"""
         if not self._helper:
             return []
-        items = await self._helper.async_trending(category or "game", page=page)
+        api_category = "tv" if category == "anime" else category
+        items = await self._helper.async_trending(api_category, page=page)
         medias: List[MediaInfo] = []
         for it in items:
             try:
@@ -383,6 +300,8 @@ class NeoDBSource(_PluginBase):
             filter_params={
                 "category": "movie",
                 "q": "",
+                "mtype": "all",
+                "sort": "hot",
             },
             filter_ui=self.neodb_filter_ui(),
         )
@@ -400,18 +319,18 @@ class NeoDBSource(_PluginBase):
             return
         sources = [
             RecommendMediaSource(
-                name="NeoDB 热门游戏",
-                api_path="plugin/NeoDBSource/neodb-trending?category=game",
-                type="Games",
-            ),
-            RecommendMediaSource(
-                name="NeoDB 科幻电影",
-                api_path="plugin/NeoDBSource/neodb-discover?category=movie&q=%E7%A7%91%E5%B9%BB",
+                name="NeoDB 热门电影",
+                api_path="plugin/NeoDBSource/neodb-trending?category=movie",
                 type="Movies",
             ),
             RecommendMediaSource(
-                name="NeoDB 动画剧集",
-                api_path="plugin/NeoDBSource/neodb-discover?category=tv&q=%E5%8A%A8%E7%94%BB",
+                name="NeoDB 热门剧集",
+                api_path="plugin/NeoDBSource/neodb-trending?category=tv",
+                type="TV Shows",
+            ),
+            RecommendMediaSource(
+                name="NeoDB 热门动画",
+                api_path="plugin/NeoDBSource/neodb-trending?category=anime",
                 type="TV Shows",
             ),
         ]
@@ -422,14 +341,17 @@ class NeoDBSource(_PluginBase):
 
     @staticmethod
     def neodb_filter_ui() -> List[dict]:
-        """探索页过滤器：关键词输入框 + 类别选择。"""
-        category_ui = [
+        """
+        探索页过滤器：关键词输入框 + 类别（电影/剧集/动画）+ 每个类别下的「类型」子筛选
+        + 排序。类型筛选借助 MP 的 show 表达式随类别联动显示。
+        """
+        return [
             {
                 "component": "VTextField",
                 "props": {
                     "model": "q",
                     "label": "搜索关键词",
-                    "placeholder": "输入名称搜索（电影/剧集/图书/游戏/音乐）",
+                    "placeholder": "输入名称搜索（电影/剧集/动画）",
                     "clearable": True,
                     "hide-details": True,
                 },
@@ -441,16 +363,34 @@ class NeoDBSource(_PluginBase):
                     {"component": "VChip", "props": {"filter": True, "tile": True, "value": "movie"}, "text": "电影"},
                     {"component": "VChip", "props": {"filter": True, "tile": True, "value": "tv"}, "text": "剧集"},
                     {"component": "VChip", "props": {"filter": True, "tile": True, "value": "anime"}, "text": "动画"},
-                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "book"}, "text": "图书"},
-                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "game"}, "text": "游戏"},
-                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "music"}, "text": "音乐"},
+                ],
+            },
+            {
+                "component": "VChipGroup",
+                "props": {"model": "mtype", "mandatory": True},
+                "content": [
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "all", "show": "{{category == 'movie'}}"}, "text": "全部"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "Movie", "show": "{{category == 'movie'}}"}, "text": "电影"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "all", "show": "{{category == 'tv'}}"}, "text": "全部"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "TVShow", "show": "{{category == 'tv'}}"}, "text": "电视剧"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "TVSeason", "show": "{{category == 'tv'}}"}, "text": "单季"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "all", "show": "{{category == 'anime'}}"}, "text": "全部"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "TVShow", "show": "{{category == 'anime'}}"}, "text": "动画剧集"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "TVSeason", "show": "{{category == 'anime'}}"}, "text": "动画单季"},
+                ],
+            },
+            {
+                "component": "VChipGroup",
+                "props": {"model": "sort", "mandatory": True},
+                "content": [
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "hot"}, "text": "热门"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "rating"}, "text": "高分"},
                 ],
             },
         ]
-        return category_ui
 
     # ------------------------------------------------------------------ #
-    # 事件：媒体ID转换（neodb: -> tmdb）
+    # 事件：媒体ID转换（neodb: -> tmdb/douban）
     # ------------------------------------------------------------------ #
     @eventmanager.register(ChainEventType.MediaRecognizeConvert)
     async def async_media_recognize_covert(self, event: Event):
@@ -460,6 +400,7 @@ class NeoDBSource(_PluginBase):
         if not event_data:
             return
         if event_data.convert_type != "themoviedb":
+            # 当前仅实现 neodb -> tmdb；douban 转换可由详情页直接识别兜底
             return
         if not str(event_data.mediaid).startswith("neodb:"):
             return
@@ -479,7 +420,7 @@ class NeoDBSource(_PluginBase):
         return NeoDBHelper.extract_tmdb_id(item)
 
     # ------------------------------------------------------------------ #
-    # 媒体识别（同步 / 异步）
+    # 媒体识别模块（点击探索页 NeoDB 条目时由核心识别链调用）
     # ------------------------------------------------------------------ #
     def recognize_media(
         self,
@@ -487,44 +428,15 @@ class NeoDBSource(_PluginBase):
         mtype: MediaType = None,
         **kwargs,
     ) -> Optional[MediaInfo]:
-        if not self._enabled:
-            return None
-        # 已有外部ID时不覆盖
-        if kwargs.get("tmdbid") or kwargs.get("doubanid") or kwargs.get("bangumiid") or kwargs.get("anilistid"):
-            return None
-        # neodb 原生ID解析（详情页 neodb: 前缀进入）
-        if kwargs.get("source") == "neodb" and kwargs.get("mediaid"):
-            return self._recognize_by_neodb_id(kwargs["mediaid"], mtype)
-        if not meta or not meta.name:
-            return None
-        else:
-            if mtype:
-                meta.type = mtype
-
-        names = list(dict.fromkeys([meta.cn_name, meta.en_name]))
-        names = [n for n in names if n]
-        mtype_eff = mtype or meta.type
-
-        for name in names:
-            if not name:
-                continue
-            logger.info(f"正在通过 NeoDB 识别 {name} ...")
-            if mtype_eff == MediaType.MOVIE:
-                items = self._helper.search(name, "movie")
-                match = NeoDBHelper.match_item(items, name, meta.year)
-                if match:
-                    return NeoDBHelper.item_to_mediainfo(match)
-            elif mtype_eff == MediaType.TV:
-                items = self._helper.search(name, "tv")
-                match = NeoDBHelper.match_item(items, name, meta.year)
-                if match:
-                    return NeoDBHelper.item_to_mediainfo(match)
-            else:
-                for cat in ("movie", "tv"):
-                    items = self._helper.search(name, cat)
-                    match = NeoDBHelper.match_item(items, name, meta.year)
-                    if match:
-                        return NeoDBHelper.item_to_mediainfo(match)
+        """
+        仅处理 NeoDB 来源的媒体ID（source=neodb & mediaid 形如 <category>.<uuid>），
+        直接回查 NeoDB 详情并构造 MediaInfo。其它来源一律交还给核心模块处理，
+        避免覆盖 TMDB/豆瓣等的正常识别结果。
+        """
+        source = kwargs.get("source")
+        mediaid = kwargs.get("mediaid")
+        if source == "neodb" and mediaid:
+            return self._recognize_by_neodb_id(mediaid, mtype)
         return None
 
     async def async_recognize_media(
@@ -533,42 +445,10 @@ class NeoDBSource(_PluginBase):
         mtype: MediaType = None,
         **kwargs,
     ) -> Optional[MediaInfo]:
-        if not self._enabled:
-            return None
-        if kwargs.get("tmdbid") or kwargs.get("doubanid") or kwargs.get("bangumiid") or kwargs.get("anilistid"):
-            return None
-        if kwargs.get("source") == "neodb" and kwargs.get("mediaid"):
-            return self._recognize_by_neodb_id(kwargs["mediaid"], mtype)
-        if not meta or not meta.name:
-            return None
-        else:
-            if mtype:
-                meta.type = mtype
-
-        names = list(dict.fromkeys([meta.cn_name, meta.en_name]))
-        names = [n for n in names if n]
-        mtype_eff = mtype or meta.type
-
-        for name in names:
-            if not name:
-                continue
-            logger.info(f"正在通过 NeoDB 识别 {name} ...")
-            if mtype_eff == MediaType.MOVIE:
-                items = await self._helper.async_search(name, "movie")
-                match = NeoDBHelper.match_item(items, name, meta.year)
-                if match:
-                    return NeoDBHelper.item_to_mediainfo(match)
-            elif mtype_eff == MediaType.TV:
-                items = await self._helper.async_search(name, "tv")
-                match = NeoDBHelper.match_item(items, name, meta.year)
-                if match:
-                    return NeoDBHelper.item_to_mediainfo(match)
-            else:
-                for cat in ("movie", "tv"):
-                    items = await self._helper.async_search(name, cat)
-                    match = NeoDBHelper.match_item(items, name, meta.year)
-                    if match:
-                        return NeoDBHelper.item_to_mediainfo(match)
+        source = kwargs.get("source")
+        mediaid = kwargs.get("mediaid")
+        if source == "neodb" and mediaid:
+            return self._recognize_by_neodb_id(mediaid, mtype)
         return None
 
     def _recognize_by_neodb_id(self, mediaid: str, mtype: MediaType = None) -> Optional[MediaInfo]:

@@ -31,8 +31,10 @@ _CATEGORY_TO_MTYPE = {
     "anime": MediaType.TV,  # 动画归为剧集处理
 }
 
-# 可识别的外部资源 host 与对应正则（用于提取 tmdb id）
+# 可识别的外部资源 host 与对应正则（用于提取 tmdb / douban / imdb id）
 _TMDB_RE = re.compile(r"themoviedb\.org/(?:movie|tv)/(\d+)")
+_DOUBAN_RE = re.compile(r"movie\.douban\.com/subject/(\d+)")
+_IMDB_RE = re.compile(r"imdb\.com/title/(tt\d+)")
 
 
 class NeoDBHelper:
@@ -137,6 +139,28 @@ class NeoDBHelper:
         return None
 
     @staticmethod
+    def extract_douban_id(item: dict) -> Optional[str]:
+        """从 external_resources 的 URL 中提取豆瓣 id。"""
+        resources = item.get("external_resources") or []
+        for res in resources:
+            url = res.get("url", "") if isinstance(res, dict) else str(res)
+            m = _DOUBAN_RE.search(url)
+            if m:
+                return m.group(1)
+        return None
+
+    @staticmethod
+    def extract_imdb_id(item: dict) -> Optional[str]:
+        """从 external_resources 的 URL 中提取 imdb id。"""
+        resources = item.get("external_resources") or []
+        for res in resources:
+            url = res.get("url", "") if isinstance(res, dict) else str(res)
+            m = _IMDB_RE.search(url)
+            if m:
+                return m.group(1)
+        return None
+
+    @staticmethod
     def category_to_mtype(category: str) -> MediaType:
         return _CATEGORY_TO_MTYPE.get(category, MediaType.UNKNOWN)
 
@@ -189,6 +213,14 @@ class NeoDBHelper:
         tmdb_id = NeoDBHelper.extract_tmdb_id(item)
         if tmdb_id:
             mi.tmdb_id = tmdb_id
+
+        douban_id = NeoDBHelper.extract_douban_id(item)
+        if douban_id:
+            mi.douban_id = douban_id
+
+        imdb_id = NeoDBHelper.extract_imdb_id(item)
+        if imdb_id:
+            mi.imdb_id = imdb_id
 
         return mi
 
