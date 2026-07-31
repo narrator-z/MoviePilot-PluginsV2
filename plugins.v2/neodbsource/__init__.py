@@ -248,8 +248,16 @@ class NeoDBSource(_PluginBase):
             items = await self._helper.async_trending(api_category, page=page)
 
         # 类型二次筛选（客户端，基于 NeoDB 条目的 type 字段）
+        # 切换分类后 mtype 可能残留旧值（如电影->剧集仍带 Movie），按分类校验合法性避免筛选为空
         if mtype and mtype != "all":
-            items = [it for it in items if it.get("type") == mtype]
+            valid_types = {
+                "movie": {"Movie"},
+                "tv": {"TVShow", "TVSeason"},
+            }.get(api_category, set())
+            if mtype not in valid_types:
+                mtype = None
+            if mtype:
+                items = [it for it in items if it.get("type") == mtype]
 
         # 排序
         if sort == "rating":
