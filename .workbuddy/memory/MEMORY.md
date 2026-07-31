@@ -15,5 +15,12 @@
 - 调试技巧：`docker exec moviepilot-v2 python3`（sys.path 含 /config/plugins）可直接 `import neodbsource` 验证；`PluginManager()`/`eventmanager.send_event` 直接 import 拿到的是未初始化实例，无法验证运行时源生成。
 
 ## 已发布插件
-- `NeoDBSource`（探索/推荐/识别 NeoDB 数据源，v1.0.1）、`ChineseSubFinder`（v6.0.1）、`StuckDownloadGuard`、`JackettExtend`、`ProwlarrExtend`、`SiteOpenSignup`。
+- `NeoDBSource`（探索/推荐/识别 NeoDB 数据源，v1.0.2）、`ChineseSubFinder`（v6.0.1）、`StuckDownloadGuard`、`JackettExtend`、`ProwlarrExtend`、`SiteOpenSignup`。
 - 目录名小写 = 类名/key 小写 = 插件 ID；Market 文件列表安装按 `pid.lower()` 匹配目录。
+
+## 插件：让探索页自定义数据源的条目可点击跳转（关键机制）
+- 探索页点击条目 → 媒体详情页 `app/api/endpoints/media.py:media_info` → `parse_media_key("neodb:tv.uuid")` → `async_recognize_media(source="neodb", mediaid="tv.uuid")`。
+- **要点**：要使自定义源（如 `neodb:`）的点击识别生效，**必须把 recognize 方法通过 `get_module()` 注册为插件模块**（插件 `_enabled` 时即返回 `recognize_media`/`async_recognize_media`），而**不能**依赖某个「媒体识别」子开关或 ChainBase 补丁——否则子开关未开时核心识别不了该源 → 返回空 → 前端报「未识别到媒体信息」。
+- 注册为模块的方法要**只处理本源**（`source=="neodb" and mediaid` 时回查构造 MediaInfo），其余来源返回 None 交还核心，否则会抢在 TMDB/豆瓣之前「赢者通吃」覆盖正常识别（async_run_module 插件模块先于系统模块执行）。
+- 同理：MP 图片代理对**公网域名自动放行**（DNS 检查），`SECURITY_IMAGE_DOMAINS` 主要给内网/私有图床用；自定义源封面若是公网域名无需手动加白名单（插件也可在 `init_plugin` 运行时 append 进白名单）。
+- NeoDB 条目 `external_resources[]` 的 URL 含 tmdb/douban/imdb 映射，需用正则提取并写入 `MediaInfo.tmdb_id/douban_id/imdb_id`，详情页与订阅才能用；无外链的条目只能浏览详情、订阅需有 tmdb/douban。
