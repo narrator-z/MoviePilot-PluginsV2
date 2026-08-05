@@ -28,14 +28,28 @@ try:
     from app.chain.subscribe import SubscribeChain
 except ImportError:
     SubscribeChain = None
+try:
+    from app.chain.download import DownloadChain
+except ImportError:
+    DownloadChain = None
+try:
+    from app.chain.search import SearchChain
+except ImportError:
+    SearchChain = None
 from app.db.downloadhistory_oper import DownloadHistoryOper
 from app.db.systemconfig_oper import SystemConfigOper
 from app.helper.thread import ThreadHelper
 from app.log import logger
 from app.plugins import _PluginBase
 from app.core.config import settings
-from app.schemas import Notification
 from app.schemas.types import NotificationType, SystemConfigKey
+try:
+    from app.schemas.types import MediaType
+except ImportError:
+    try:
+        from app.schemas.media import MediaType
+    except ImportError:
+        MediaType = None
 
 # qBittorrent 被视为「活跃下载中」的原始状态（这些状态下进度可能为 0 但仍在尝试下载/校验）
 _QB_ACTIVE_STATES = {
@@ -60,7 +74,7 @@ class StuckDownloadGuard(_PluginBase):
     # 插件图标
     plugin_icon = "Qbittorrent_A.png"
     # 插件版本
-    plugin_version = "1.0.4"
+    plugin_version = "1.1.0"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -89,7 +103,9 @@ class StuckDownloadGuard(_PluginBase):
     _delete_history = True
     # 是否发送通知
     _notify = True
-    # 每个 hash 的监控状态：{hash: {title, downloader, active_stuck, last_ts, retries}}
+    # 长期0速度时是否自动「切换下载源/种子」（降级+换源重搜后替换原种子）
+    _switch_source = True
+    # 每个 hash 的监控状态：{hash: {title, downloader, active_stuck, last_ts, retries, switch_attempted}}
     _states: Dict[str, dict] = {}
 
     def init_plugin(self, config: dict = None):
@@ -119,6 +135,7 @@ class StuckDownloadGuard(_PluginBase):
             self._delete_files = config.get("delete_files", False)
             self._delete_history = config.get("delete_history", True)
             self._notify = config.get("notify", True)
+            self._switch_source = config.get("switch_source", True)
 
         if not self._enabled:
             return
@@ -176,6 +193,7 @@ class StuckDownloadGuard(_PluginBase):
             "delete_files": self._delete_files,
             "delete_history": self._delete_history,
             "notify": self._notify,
+            "switch_source": self._switch_source,
         })
 
     def __save_states(self):
@@ -408,6 +426,7 @@ class StuckDownloadGuard(_PluginBase):
                         "active_stuck": 0.0,
                         "last_ts": None,
                         "retries": 0,
+                        "switch_attempted": False,
                     }
                     self._states[h] = rec
 
@@ -438,26 +457,205 @@ class StuckDownloadGuard(_PluginBase):
 
     def __handle_stuck(self, hash_str: str, rec: dict, t: dict, clients: Dict[str, dict]):
         """
-        达到卡顿时长后的处理：先降级排至队尾，连续多次后升级为停止/清理/重新搜索。
+        达到卡顿时长后的处理：先降级排至队尾，再尝试「切换下载源/种子」
+        （重新搜索更优种子并替换原种子）；若切换不可用且连续多次仍无效，则升级为停止/清理。
         """
         rec["retries"] = rec.get("retries", 0) + 1
-        if rec["retries"] < self._max_retries:
-            # 降级并排至队尾
-            self.__demote_and_move_tail(clients, t["downloader"], hash_str)
+        # 1) 降级：降优先级并排至下载队列队尾（避免抢占正常下载的带宽/队列）
+        self.__demote_and_move_tail(clients, t["downloader"], hash_str)
+
+        # 2) 切换下载源：每个卡顿周期仅尝试一次，避免每次都重搜
+        switched = False
+        if self._switch_source and not rec.get("switch_attempted"):
+            switched = self.__switch_source(hash_str, rec, t, clients)
+            rec["switch_attempted"] = True
+
+        # 3) 判定：已切换成功 → 停止追踪原种子（原种子将被移除，新种子下一轮单独监控）
+        if switched:
+            self._states.pop(hash_str, None)
+            return
+
+        # 4) 切换失败且已达最大降级次数 → 升级为停止/清理（订阅源会顺带重新搜索）
+        if rec["retries"] >= self._max_retries:
+            self.__escalate(clients, t["downloader"], hash_str, rec)
+            self._states.pop(hash_str, None)
+            return
+
+        # 5) 未达上限：重置计时，开启下一轮观察窗口
+        rec["active_stuck"] = 0.0
+        rec["last_ts"] = time.time()
+        self.__notify(
+            action="降级并排至队尾（暂未切换源）",
+            title=rec.get("title"),
+            hash_str=hash_str,
+            extra=f"已连续卡住 {rec['retries']} 次（达到 {self._max_retries} 次将停止并清理）",
+        )
+
+    def __switch_source(self, hash_str: str, rec: dict, t: dict, clients: Dict[str, dict]) -> bool:
+        """
+        尝试「切换下载源/种子」：为长期0速度的种子寻找更优替代源并替换。
+          - 订阅来源：通过订阅链重新搜索（MoviePilot 会挑选最优可用种子）；
+          - 非订阅来源：按媒体身份跨索引器重搜，选取做种人更多的替代种子后添加并移除原种子。
+        返回 True 表示已成功切换（原种子将被移除），False 表示本次无法切换。
+        """
+        history = None
+        try:
+            history = DownloadHistoryOper().get_by_hash(hash_str)
+        except Exception as e:
+            logger.warning(f"【{self.plugin_name}】查询下载历史失败：{e}")
+        if not history:
+            logger.info(f"【{self.plugin_name}】未找到下载历史，无法切换源：{hash_str}")
+            return False
+
+        source = self.__source_of(history)
+        # 订阅来源：直接重搜订阅（MP 选最优种子）
+        if source and str(source).startswith("Subscribe|"):
+            if SubscribeChain is None:
+                logger.warning(f"【{self.plugin_name}】订阅链不可用，无法切换源")
+                return False
+            try:
+                subscribe = SubscribeChain().get_subscribe_by_source(source)
+            except Exception as e:
+                logger.error(f"【{self.plugin_name}】获取订阅失败：{e}")
+                return False
+            if not subscribe:
+                logger.warning(f"【{self.plugin_name}】未找到对应订阅：{source}")
+                return False
+            sid = subscribe.id
+            try:
+                SubscribeChain().search(sid=sid)
+            except Exception as e:
+                logger.error(f"【{self.plugin_name}】订阅《{subscribe.name}》重新搜索失败：{e}")
+                return False
+            # 重搜成功后再移除原卡住种子，避免空窗
+            self.__stop_torrent(clients, t["downloader"], hash_str)
+            self.__remove_torrent(clients, t["downloader"], hash_str, delete_files=self._delete_files)
+            if self._delete_history:
+                try:
+                    DownloadHistoryOper().delete_history(history.id)
+                except Exception:
+                    pass
             self.__notify(
-                action="降级并排至队尾",
+                action="已切换下载源（订阅重搜）",
                 title=rec.get("title"),
                 hash_str=hash_str,
-                extra=f"已连续卡住 {rec['retries']} 次（达到 {self._max_retries} 次将停止并重新搜索）",
+                extra=f"已为订阅《{subscribe.name}》触发重新搜索并移除原卡住种子",
             )
-            # 重置计时，开启下一轮观察窗口
-            rec["active_stuck"] = 0.0
-            rec["last_ts"] = time.time()
-        else:
-            # 升级处理：停止 + 清理 + 重新搜索
-            self.__escalate(clients, t["downloader"], hash_str, rec)
-            # 清理监控记录，避免下一轮重复触发升级处理
-            self._states.pop(hash_str, None)
+            return True
+
+        # 非订阅来源：跨索引器重搜更优种子
+        return self.__switch_nonsub(hash_str, rec, t, history, clients)
+
+    def __switch_nonsub(self, hash_str: str, rec: dict, t: dict, history, clients: Dict[str, dict]) -> bool:
+        """
+        非订阅来源：按媒体身份跨索引器重搜，选取做种人更多的替代种子并替换原种子。
+        """
+        if SearchChain is None or DownloadChain is None:
+            logger.warning(f"【{self.plugin_name}】搜索/下载链不可用，无法切换非订阅源")
+            return False
+        title = getattr(history, "title", None) or t.get("title") or ""
+        year = getattr(history, "year", None)
+        keyword = f"{title} {year}".strip() if year else title
+        if not keyword:
+            logger.info(f"【{self.plugin_name}】下载历史无标题信息，无法重搜：{hash_str}")
+            return False
+
+        mtype = self.__history_mtype(history)
+        try:
+            contexts = SearchChain().search_by_title(title=keyword, sites=None, cache_local=False)
+        except Exception as e:
+            logger.error(f"【{self.plugin_name}】重搜「{keyword}」失败：{e}")
+            return False
+        if not contexts:
+            logger.info(f"【{self.plugin_name}】未搜索到「{keyword}」的替代种子")
+            return False
+
+        # 过滤：有做种人、且非原种子同名
+        stuck_name = (getattr(history, "torrent_name", None) or t.get("title") or "").strip().lower()
+        candidates = []
+        for ctx in contexts:
+            ti = getattr(ctx, "torrent_info", None)
+            if not ti:
+                continue
+            seeders = getattr(ti, "seeders", 0) or 0
+            if seeders <= 0:
+                continue
+            # 排除与原种子完全相同的（多半就是它本身）
+            if (getattr(ti, "title", "") or "").strip().lower() == stuck_name:
+                continue
+            candidates.append((seeders, ctx, ti))
+        if not candidates:
+            logger.info(f"【{self.plugin_name}】无更优替代种子（均无名或做种人=0）")
+            return False
+
+        # 选取做种人最多的替代种子
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        seeders, ctx, ti = candidates[0]
+        new_hash = self.__download_single(ctx, ti)
+        if not new_hash:
+            return False
+
+        # 新种子已添加，移除原卡住种子
+        self.__stop_torrent(clients, t["downloader"], hash_str)
+        self.__remove_torrent(clients, t["downloader"], hash_str, delete_files=self._delete_files)
+        if self._delete_history:
+            try:
+                DownloadHistoryOper().delete_history(history.id)
+            except Exception:
+                pass
+        self.__notify(
+            action="已切换下载源（重搜更优种子）",
+            title=rec.get("title"),
+            hash_str=hash_str,
+            extra=f"新种子：{getattr(ti, 'title', '')}（做种人 {seeders}）",
+        )
+        return True
+
+    @staticmethod
+    def __history_mtype(history):
+        """从下载历史推导媒体类型，用于限定重搜范围；推导失败返回 None。"""
+        if MediaType is None:
+            return None
+        raw = getattr(history, "type", None)
+        if not raw:
+            return None
+        try:
+            return MediaType(raw)
+        except Exception:
+            mapping = {
+                "电影": "MOVIE", "电视剧": "TV", "剧集": "TV", "综艺": "TV",
+                "动漫": "ANIME", "动画": "ANIME", "MOVIE": "MOVIE", "TV": "TV",
+                "ANIME": "ANIME", "MOVIE": "MOVIE",
+            }
+            try:
+                return MediaType(mapping.get(str(raw), "MOVIE"))
+            except Exception:
+                return None
+
+    @staticmethod
+    def __download_single(ctx, ti) -> Optional[str]:
+        """
+        通过下载链添加替代种子；返回新种子 hash（成功）或 None（失败）。
+        """
+        if DownloadChain is None:
+            return None
+        content = getattr(ti, "enclosure", None)
+        if not content:
+            logger.warning(f"【{self.plugin_name}】候选种子缺少下载链接（enclosure），跳过切换")
+            return None
+        try:
+            dl = DownloadChain()
+            result = dl.download_single(
+                context=ctx,
+                torrent_content=content,
+                label=settings.TORRENT_TAG,
+            )
+            if isinstance(result, tuple):
+                return result[0] if result and result[0] else None
+            return result
+        except Exception as e:
+            logger.error(f"【{self.plugin_name}】添加替代种子失败：{e}")
+            return None
 
     def __demote_and_move_tail(self, clients: Dict[str, dict], downloader: str, hash_str: str) -> bool:
         """
@@ -610,12 +808,12 @@ class StuckDownloadGuard(_PluginBase):
         if not self._notify:
             return
         try:
-            self.post_message(Notification(
+            self.post_message(
                 mtype=NotificationType.Plugin,
                 title=f"【下载守卫】{action}",
                 text=f"种子：{title or '未知'}\nHash：{hash_str}\n{extra or ''}",
                 source=self.plugin_name,
-            ))
+            )
         except Exception as e:
             logger.warning(f"【{self.plugin_name}】发送通知失败：{e}")
 
@@ -703,7 +901,7 @@ class StuckDownloadGuard(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
-                                'props': {'cols': 12, 'md': 6},
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [{
                                     'component': 'VTextField',
                                     'props': {
@@ -711,19 +909,31 @@ class StuckDownloadGuard(_PluginBase):
                                         'label': '连续降级次数',
                                         'type': 'number',
                                         'placeholder': '3',
-                                        'hint': '连续多次降级仍无效后，停止并清理、重新搜索'
+                                        'hint': '连续多次降级仍无效后，停止并清理（订阅源会顺带重新搜索）'
                                     }
                                 }]
                             },
                             {
                                 'component': 'VCol',
-                                'props': {'cols': 12, 'md': 6},
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [{
                                     'component': 'VSwitch',
                                     'props': {
                                         'model': 'only_subscribe',
                                         'label': '仅处理订阅来源',
-                                        'hint': '开启后只监控订阅来源的下载（重新搜索需订阅来源）；关闭则覆盖全部下载任务'
+                                        'hint': '开启后只监控订阅来源的下载；关闭则覆盖全部下载任务'
+                                    }
+                                }]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {'cols': 12, 'md': 4},
+                                'content': [{
+                                    'component': 'VSwitch',
+                                    'props': {
+                                        'model': 'switch_source',
+                                        'label': '自动切换下载源',
+                                        'hint': '长期0速度时自动重新搜索更优种子并替换原种子（降级+换源）；关闭则仅降级排队'
                                     }
                                 }]
                             }
@@ -769,9 +979,10 @@ class StuckDownloadGuard(_PluginBase):
                                     'props': {
                                         'type': 'info',
                                         'variant': 'tonal',
-                                        'text': '仅处理带 MoviePilot 标签的种子。下载器需为 qBittorrent 或 Transmission。'
-                                                '“排至队尾/降低优先级”通过下载器原生 API 实现；'
-                                                '“重新搜索”仅对订阅来源的下载有效，会通过订阅链重新搜索。'
+                                'text': '仅处理带 MoviePilot 标签的种子。下载器需为 qBittorrent 或 Transmission。'
+                                        '长期0速度时：先「降级」排至队尾，再「切换下载源」——'
+                                        '订阅来源走订阅链重搜、非订阅来源跨索引器重搜更优种子并替换原种子；'
+                                        '若切换不可用且连续多次无效，则停止并清理（订阅源会顺带重新搜索）。'
                                     }
                                 }]
                             }
@@ -787,6 +998,7 @@ class StuckDownloadGuard(_PluginBase):
             "inactive_minutes": 30,
             "max_retries": 3,
             "only_subscribe": True,
+            "switch_source": True,
             "delete_files": False,
             "delete_history": True,
         }

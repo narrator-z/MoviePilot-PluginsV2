@@ -24,6 +24,8 @@
      会触发 TypeError）；
   5. 不缓存失败请求（官方用 lru_cache 缓存了 None 结果，导致失败后永不重试）。
 """
+import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -52,7 +54,7 @@ class ChineseSubFinder(_PluginBase):
     # 插件图标
     plugin_icon = "chinesesubfinder.png"
     # 插件版本
-    plugin_version = "6.0.1"
+    plugin_version = "6.0.2"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -398,6 +400,48 @@ class ChineseSubFinder(_PluginBase):
     # ----------------------------- 调用 CSF -----------------------------
 
     def __request_csf(self, file_path: str, item_type: int, item_bluray: bool):
+        """
+        通知 ChineseSubFinder 下载字幕。
+
+        在后台线程执行，避免阻塞入库事件；并针对「Emby/Jellyfin 尚未生成 .nfo
+        导致 CSF add-job 返回 HTTP 500（open ... .nfo: no such file or directory）」的
+        时序竞态做有限次重试——该情况下 .nfo 通常会在文件入库后 1 分钟左右出现，
+        重试即可成功，避免无意义的报错刷屏（字幕最终仍会被下载，只是快慢问题）。
+        """
+        logger.info("通知 ChineseSubFinder 下载字幕: %s (type=%s, bluray=%s)" % (
+            file_path, item_type, item_bluray))
+        threading.Thread(
+            target=self.__add_job_with_retry,
+            args=(file_path, item_type, item_bluray),
+            daemon=True,
+        ).start()
+
+    def __add_job_with_retry(self, file_path: str, item_type: int, item_bluray: bool,
+                             max_retries: int = 5, delay: int = 20):
+        """带重试地调用 CSF add-job；仅在硬错误（鉴权/路径/参数）或重试耗尽时上报失败。"""
+        reason = ""
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                time.sleep(delay)
+            status, reason = self.__try_add_job(file_path, item_type, item_bluray)
+            if status == "ok":
+                return
+            if status == "fatal":
+                self.__fail(file_path, reason)
+                return
+            # status == "retry"：瞬时问题（.nfo 未生成 / 网络抖动），继续重试
+            logger.info("【字幕守卫】CSF 暂未就绪（%s），%d/%d 后重试：%s"
+                        % (reason, attempt + 1, max_retries, file_path))
+        self.__fail(file_path, "重试 %d 次后仍失败：%s" % (max_retries, reason))
+
+    def __try_add_job(self, file_path: str, item_type: int, item_bluray: bool) -> Tuple[str, str]:
+        """
+        单次调用 CSF add-job。
+        返回 (status, reason)：
+          - "ok"    ：成功（已添加任务或 CSF 已接收）
+          - "retry" ：瞬时错误（5xx / 网络异常），可重试
+          - "fatal" ：硬错误（鉴权失败 / 文件路径在 CSF 端不可见 / 参数错误），不重试
+        """
         req_url = "%s%s" % (self._host, _API_ADD_JOB)
         params = {
             "video_type": item_type,
@@ -406,46 +450,41 @@ class ChineseSubFinder(_PluginBase):
             "media_server_inside_video_id": "",
             "is_bluray": item_bluray,
         }
-        logger.info("通知 ChineseSubFinder 下载字幕: %s (type=%s, bluray=%s)" % (
-            file_path, item_type, item_bluray))
         try:
             res = RequestUtils(
                 headers={"Authorization": "Bearer %s" % self._api_key},
                 timeout=30,
             ).post(req_url, json=params)
-            if res is None:
-                self.__fail(file_path, "请求无响应（请检查服务器地址与网络）")
-                return
-            if res.status_code != 200:
-                body = ""
-                try:
-                    body = res.json().get("message", "") or res.text
-                except Exception:
-                    body = res.text or ""
-                self.__fail(file_path, "HTTP %s：%s" % (res.status_code, body))
-                return
-            # HTTP 200：解析返回（即使无字幕任务，CSF 也返回 200）
+        except Exception as e:
+            return "retry", "连接出错：%s" % str(e)
+        if res is None:
+            return "retry", "请求无响应（请检查服务器地址与网络）"
+        if res.status_code == 200:
             try:
                 data = res.json()
             except Exception:
                 logger.info("ChineseSubFinder 任务添加成功（无 JSON 响应）：%s" % file_path)
-                return
+                return "ok", ""
             job_id = data.get("job_id")
             message = data.get("message", "")
             if not job_id:
-                # 典型情况：physical video file not found —— 文件在 CSF 侧不存在（路径映射问题）
-                logger.warning("ChineseSubFinder 未添加任务：%s（%s）" % (file_path, message))
-                self.__fail(
-                    file_path,
-                    "未添加任务：%s（检查路径映射，CSF 端需能访问该文件）" % message,
-                )
-                return
+                # physical video file not found —— 文件在 CSF 侧不可见（路径映射问题），属硬错误
+                return "fatal", "未添加任务：%s（检查路径映射，CSF 端需能访问该文件）" % message
             logger.info("ChineseSubFinder 任务添加成功：%s (job_id=%s)" % (file_path, job_id))
             if self._notify:
                 self.__notify("添加成功", file_path, "job_id=%s" % job_id)
-        except Exception as e:
-            logger.error("连接 ChineseSubFinder 出错：" + str(e))
-            self.__fail(file_path, "连接出错：%s" % str(e))
+            return "ok", ""
+        # 非 200：区分可重试的 5xx 与硬错误（4xx）
+        body = ""
+        try:
+            body = res.json().get("message", "") or res.text
+        except Exception:
+            body = res.text or ""
+        if res.status_code >= 500:
+            # 典型：Emby 尚未生成 .nfo -> open ... .nfo: no such file or directory（瞬时）
+            return "retry", "HTTP %s：%s" % (res.status_code, body)
+        # 4xx：401/403 鉴权、404 路径、400/422 参数 —— 硬错误
+        return "fatal", "HTTP %s：%s" % (res.status_code, body)
 
     # ----------------------------- 通知 -----------------------------
 
@@ -456,11 +495,13 @@ class ChineseSubFinder(_PluginBase):
 
     def __notify(self, action: str, file_path: str, extra: str = ""):
         try:
-            self.post_message(Notification(
+            # 注意：本 fork 的 post_message 签名为 (channel, mtype, title, text, ...)
+            # 关键字拆传，切勿再传入 Notification 对象（会被当成 channel 触发枚举校验失败）
+            self.post_message(
                 mtype=NotificationType.Plugin,
                 title=f"【字幕守卫】{action}",
                 text=f"文件：{file_path}\n{extra or ''}",
                 source=self.plugin_name,
-            ))
+            )
         except Exception as e:
             logger.warning("【ChineseSubFinder】发送通知失败：%s" % e)

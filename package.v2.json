@@ -20,9 +20,9 @@
   },
   "StuckDownloadGuard": {
     "name": "下载守卫",
-    "description": "监控下载任务，长时间无进度则降级排至队尾，连续无效则停止并重新搜索",
+    "description": "监控下载任务，长期0速度则降级排至队尾并自动切换下载源/种子（订阅链重搜或跨索引器重搜更优种子并替换），连续无效则停止清理",
     "labels": "下载管理,监控,队列",
-    "version": "1.0.4",
+    "version": "1.1.0",
     "icon": "Qbittorrent_A.png",
     "author": "narrator-z",
     "level": 1,
@@ -31,21 +31,23 @@
       "v1.0.1": "修复 Transmission 下载器初始化参数错误（transmission_rpc.Client 不接受 user= 参数，改为已有 username=），修复后 tm 下载器可正常连接",
       "v1.0.2": "补充回 Client 的 username= 参数（1.0.1 误删导致 tm 认证失败 require auth），tm 下载器恢复传用户名密码",
       "v1.0.3": "修复 tm RPC 路径：MP 配置 host 末尾斜杠导致 parsed.path=/ 而非 /transmission/rpc，返回 HTML 触发 parse 失败，现强制回退正确路径",
-      "v1.0.4": "显示名由 StuckDownloadGuard 改为中文「下载守卫」，更简洁"
+      "v1.0.4": "显示名由 StuckDownloadGuard 改为中文「下载守卫」，更简洁",
+      "v1.1.0": "新增「降级切换」：长期0速度时先降级排至队尾，再自动切换下载源/种子——订阅来源走订阅链重搜、非订阅来源跨索引器重搜做种人更多的替代种子并替换原种子；修复通知调用 bug（post_message 传 Notification 对象触发 channel 校验崩溃导致所有通知失效）；每个卡顿周期仅切换一次，连续多次仍无效则停止清理"
     }
   },
   "ChineseSubFinder": {
     "name": "ChineseSubFinder",
     "description": "整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）",
     "labels": "字幕,下载,ChineseSubFinder",
-    "version": "6.0.1",
+    "version": "6.0.2",
     "icon": "chinesesubfinder.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
       "v1.0.0": "基于 jxxghp 同名插件重写：修复「调用 ChineseSubFinder API 失败」长期报错——外部 /api/v1 接口由 CheckApiAuth 保护，需 Authorization: Bearer <ApiToken>（CSF 设置中的外部 API Token，非 Web 登录密码），401 即报错根因；新增连接测试按钮、失败原因诊断（HTTP 码+message）、失败通知、修复蓝光表达式错误、移除失败缓存",
       "v6.0.0": "抬升主版本号至 6.x，避免被官方 jxxghp 同名插件（ChineseSubFinder 1.1）按版本去重覆盖，确保本修复版在插件市场胜出",
-      "v6.0.1": "修复“没生效且无日志”：TransferInfo 在 v2.15.x 无 is_bluray/target_path 字段导致属性访问崩溃或静默失败；改为从 target_item/file_list_new 推导目标路径、按 BDMV 判定蓝光；并在每个静默关卡加可见日志，便于排查"
+      "v6.0.1": "修复“没生效且无日志”：TransferInfo 在 v2.15.x 无 is_bluray/target_path 字段导致属性访问崩溃或静默失败；改为从 target_item/file_list_new 推导目标路径、按 BDMV 判定蓝光；并在每个静默关卡加可见日志，便于排查",
+      "v6.0.2": "修复两类报错：① Warning「发送通知失败：Notification channel 校验失败」——fork 将 post_message 签名改为拆传 channel/mtype/title 后，插件仍按旧式传 Notification 对象（被当成 channel 触发枚举校验），改为关键字拆传；② ERROR「调用 API 失败 HTTP 500：open ... .nfo: no such file or directory」——实为入库瞬间 Emby/Jellyfin 尚未生成 .nfo 的时序竞态，改为后台线程调用并对 5xx/网络异常做最多 5 次（间隔 20s）重试，重试成功即静默，仅硬错误(鉴权/路径/参数)或重试耗尽才上报"
     }
   },
   "ProwlarrExtend": {
@@ -70,11 +72,13 @@
     "name": "NeoDB源",
     "description": "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/动画）。",
     "labels": "数据源,NeoDB,探索,推荐,识别",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "icon": "neodb.png",
     "author": "narrator-z",
     "level": 1,
     "history": {
+      "v1.0.4": "详情页增强：点击 NeoDB 条目时拉取演职员（公开 credit 端点）填入演员表（无需令牌）；新增可选「NeoDB 访问令牌」配置项，填入 OAuth2 Bearer Token 后解锁「相似推荐」，因 MoviePilot 详情页 API 无 recommend 字段，相似推荐以文本块注入详情页简介区显示。",
+      "v1.0.3": "丰富探索页筛选器（对标 IMDb/豆瓣）：新增「榜单」排序（热门/高分/最多评分/按标题）与「评分」阈值筛选（全部/8分+/7分+/6分+），保留分类(电影/剧集/动画)、类型子筛选与关键词搜索。注：NeoDB 公开 API 仅提供单一 trending 浏览流（无独立排行榜/最新端点，列表不含年代/类型标签），故 genre/地区/年代筛选暂不可行，已写入插件说明。",
       "v1.0.2": "修复点击探索页电影/剧集报错「未识别到媒体信息」：将 neodb: 源识别注册为插件模块（get_module），只要插件启用即可点击跳转，不再依赖「媒体识别」子开关；同时补全 douban_id/imdb_id 提取让详情更完整。探索分类精简为电影/剧集/动画，并在每个分类下新增「类型」(电视剧/单季) 与「排序」(热门/高分) 筛选器。移除不再需要的「媒体识别」子开关与 ChainBase 补丁。",
       "v1.0.1": "修复探索页 NeoDB 数据源空白：未提供关键词时改为返回该分类的 NeoDB 热门榜单（movie/tv/book/game/music 均公开可用，anime 归入 tv），避免点进标签即空白；推荐数据源逻辑不变。注意插件默认禁用，需在 MoviePilot 插件页手动启用后探索页/推荐页才会出现 NeoDB 标签页",
       "v1.0.0": "初始版本：对标 imdbsource，提供 NeoDB 探索数据源（关键词+类别搜索）、推荐数据源（热门游戏/科幻电影/动画剧集）、媒体识别增强（按名称回退搜索并解析 TMDB ID），以及 neodb: 媒体ID回链转换；支持自定义 NeoDB 实例地址与代理"

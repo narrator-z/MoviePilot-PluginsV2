@@ -45,7 +45,7 @@ class NeoDBSource(_PluginBase):
     # 插件图标
     plugin_icon = "neodb.png"
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.4"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -61,6 +61,7 @@ class NeoDBSource(_PluginBase):
     _enabled: bool = False
     _proxy: bool = False
     _neodb_url: str = "https://neodb.social"
+    _neodb_token: str = ""
 
     # 私有属性
     _helper: NeoDBHelper = None
@@ -73,6 +74,7 @@ class NeoDBSource(_PluginBase):
             self._enabled = bool(config.get("enabled"))
             self._proxy = bool(config.get("proxy"))
             self._neodb_url = (config.get("neodb_url") or "https://neodb.social").rstrip("/")
+            self._neodb_token = (config.get("neodb_token") or "").strip()
             self._update_config()
 
         self._helper = NeoDBHelper(
@@ -113,6 +115,7 @@ class NeoDBSource(_PluginBase):
                 "enabled": self._enabled,
                 "proxy": self._proxy,
                 "neodb_url": self._neodb_url,
+                "neodb_token": self._neodb_token,
             }
         )
 
@@ -168,6 +171,28 @@ class NeoDBSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
+                                "props": {"cols": 12, "md": 12},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "neodb_token",
+                                            "label": "NeoDB 访问令牌（可选）",
+                                            "placeholder": "OAuth2 Bearer Token",
+                                            "type": "password",
+                                            "clearable": True,
+                                            "hint": "填入后可解锁「相似推荐」（详情页简介区）；获取方式：NeoDB 设置-开发者-创建应用，OAuth 授权后拿 access_token。留空则只显示演员表（演员表无需令牌）。",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
                                 "props": {"cols": 12},
                                 "content": [
                                     {
@@ -175,10 +200,11 @@ class NeoDBSource(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "title": "关于 NeoDB",
-                                            "text": "NeoDB 是开放的书籍/影视/游戏/音乐社交书目库。本插件使用其公开 API 提供"
-                                            "电影/剧集/动画的探索与推荐；电影/剧集会尝试解析 TMDB/豆瓣 ID 以获得完整详情，"
-                                            "无外链的条目以 NeoDB 数据直接展示（可浏览详情，订阅需有 TMDB/豆瓣 ID）。",
+                                            "title": "关于 NeoDB 筛选",
+                                            "text": "NeoDB 公开 API 仅提供「热门」单一浏览流（无独立的排行榜/最新端点，"
+                                            "列表也不含年代/类型标签），故本插件提供：分类（电影/剧集/动画）、类型、"
+                                            "榜单（热门/高分/最多评分/按标题）、评分（8分+/7分+/6分+）与关键词搜索。"
+                                            "电影/剧集会尝试解析 TMDB/豆瓣 ID 以获得完整详情，无外链的条目以 NeoDB 数据直接展示。",
                                         },
                                     }
                                 ],
@@ -191,6 +217,7 @@ class NeoDBSource(_PluginBase):
             "enabled": False,
             "proxy": False,
             "neodb_url": "https://neodb.social",
+            "neodb_token": "",
         }
 
     def get_page(self) -> List[dict]:
@@ -228,14 +255,21 @@ class NeoDBSource(_PluginBase):
         q: Optional[str] = None,
         mtype: Optional[str] = None,
         sort: Optional[str] = None,
+        min_rating: Optional[str] = None,
         page: int = 1,
     ) -> List[dict]:
         """
-        探索数据源：搜索 / 热门 NeoDB 目录，并支持按类型与排序二次筛选。
+        探索数据源：搜索 / 热门 NeoDB 目录，并支持按类型、评分与排序二次筛选。
+
+        NeoDB 公开 API 仅提供单一 trending 浏览流（无独立的 ranking/discover 端点，
+        列表载荷也不含 year/tags），因此「榜单 / 评分 / 排序」均基于该流在客户端派生：
+        - 榜单(sort): hot 热门（保持原顺序）/ rating 高分 / rating_count 最多评分 / title 按标题
+        - 评分(min_rating): 0 全部 / 8 / 7 / 6 分及以上
         :param category: movie / tv / anime（anime 归为 tv）
         :param q: 搜索关键词；为空时返回该分类热门榜单，避免探索页空白
         :param mtype: 子类型筛选（Movie / TVShow / TVSeason / all）
-        :param sort: hot（默认，保持原顺序）/ rating（按评分降序）
+        :param sort: hot / rating / rating_count / title
+        :param min_rating: 评分下限（字符串 "0"/"8"/"7"/"6"），0 表示不限
         :param page: 页码
         """
         if not self._helper:
@@ -259,12 +293,23 @@ class NeoDBSource(_PluginBase):
             if mtype:
                 items = [it for it in items if it.get("type") == mtype]
 
-        # 排序
+        # 评分下限筛选（客户端，基于 NeoDB 条目的 rating 字段，列表载荷即含此字段）
+        try:
+            threshold = float(min_rating) if min_rating not in (None, "", "0", "all") else 0.0
+        except (TypeError, ValueError):
+            threshold = 0.0
+        if threshold > 0:
+            items = [it for it in items if (it.get("rating") or 0) >= threshold]
+
+        # 排序（基于 trending 流派生的多种榜单）
         if sort == "rating":
+            items = sorted(items, key=lambda x: (x.get("rating") or 0), reverse=True)
+        elif sort == "rating_count":
+            items = sorted(items, key=lambda x: (x.get("rating_count") or 0), reverse=True)
+        elif sort == "title":
             items = sorted(
                 items,
-                key=lambda x: (x.get("rating") or 0),
-                reverse=True,
+                key=lambda x: (x.get("display_title") or x.get("title") or "").lower(),
             )
 
         medias: List[MediaInfo] = []
@@ -310,6 +355,7 @@ class NeoDBSource(_PluginBase):
                 "q": "",
                 "mtype": "all",
                 "sort": "hot",
+                "min_rating": "0",
             },
             filter_ui=self.neodb_filter_ui(),
         )
@@ -350,8 +396,14 @@ class NeoDBSource(_PluginBase):
     @staticmethod
     def neodb_filter_ui() -> List[dict]:
         """
-        探索页过滤器：关键词输入框 + 类别（电影/剧集/动画）+ 每个类别下的「类型」子筛选
-        + 排序。类型筛选借助 MP 的 show 表达式随类别联动显示。
+        探索页过滤器（对标 IMDb / 豆瓣的筛选维度）：
+        - 搜索关键词
+        - 分类：电影 / 剧集 / 动画（NeoDB 影视向分类；图书/游戏/音乐等非影视不纳入）
+        - 类型：随分类联动（全部 / 电影 / 电视剧 / 单季）
+        - 榜单(排序)：热门 / 高分 / 最多评分 / 按标题
+          —— NeoDB 公开 API 仅提供单一 trending 浏览流（无独立 ranking/discover 端点），
+             故多种「榜单」均基于该流在客户端派生。
+        - 评分：全部 / 8分+ / 7分+ / 6分+（基于条目自带的 rating 字段，客户端筛选）
         """
         return [
             {
@@ -393,6 +445,18 @@ class NeoDBSource(_PluginBase):
                 "content": [
                     {"component": "VChip", "props": {"filter": True, "tile": True, "value": "hot"}, "text": "热门"},
                     {"component": "VChip", "props": {"filter": True, "tile": True, "value": "rating"}, "text": "高分"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "rating_count"}, "text": "最多评分"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "title"}, "text": "按标题"},
+                ],
+            },
+            {
+                "component": "VChipGroup",
+                "props": {"model": "min_rating", "mandatory": True},
+                "content": [
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "0"}, "text": "全部评分"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "8"}, "text": "8分+"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "7"}, "text": "7分+"},
+                    {"component": "VChip", "props": {"filter": True, "tile": True, "value": "6"}, "text": "6分+"},
                 ],
             },
         ]
@@ -470,6 +534,26 @@ class NeoDBSource(_PluginBase):
             logger.warning(f"NeoDB 未找到条目：{mediaid}")
             return None
         mi = NeoDBHelper.item_to_mediainfo(item)
+        # 演员表（公开 credit 端点，无需令牌）
+        try:
+            credit = self._helper.get_credit(category, uuid)
+            if credit:
+                actors = NeoDBHelper.credit_to_actors(credit)
+                if actors:
+                    mi.actors = actors
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"NeoDB 演员表获取失败：{e}")
+        # 相似推荐（需 OAuth token；详情页 API 无 recommend 字段，注入简介）
+        token = self._neodb_token
+        if token:
+            try:
+                similar = self._helper.get_similar(uuid, token)
+                if similar:
+                    block = NeoDBHelper.similar_to_text(similar)
+                    if block:
+                        mi.overview = f"{mi.overview or ''}\n\n{block}".strip()
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"NeoDB 相似推荐获取失败：{e}")
         if mtype:
             mi.type = mtype
         return mi

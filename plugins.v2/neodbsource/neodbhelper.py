@@ -85,6 +85,34 @@ class NeoDBHelper:
             return data.get("data") or []
         return []
 
+    def get_credit(self, category: str, uuid: str) -> Optional[dict]:
+        """获取条目演职员（公开，无需鉴权）。返回 {data:[...], pages, count}。"""
+        if not category or not uuid:
+            return None
+        data = RequestUtils(accept_type="application/json", proxies=self.proxies).get_json(
+            f"{self.base_url}/api/catalog/{category}/{uuid}/credit/"
+        )
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def get_similar(self, uuid: str, token: str) -> Optional[dict]:
+        """获取单条相似推荐（需 OAuth2 Bearer token）。返回 {data:[...], pages, count}。"""
+        if not uuid or not token:
+            return None
+        resp = RequestUtils(accept_type="application/json", proxies=self.proxies).request(
+            "get",
+            f"{self.base_url}/api/catalog/item/{uuid}/similar",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        if resp is None or getattr(resp, "status_code", 0) != 200:
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------ #
     # 异步请求
     # ------------------------------------------------------------------ #
@@ -123,6 +151,34 @@ class NeoDBHelper:
         if isinstance(data, dict):
             return data.get("data") or []
         return []
+
+    async def async_get_credit(self, category: str, uuid: str) -> Optional[dict]:
+        """异步获取条目演职员（公开，无需鉴权）。"""
+        if not category or not uuid:
+            return None
+        data = await AsyncRequestUtils(accept_type="application/json", proxies=self.proxies).get_json(
+            f"{self.base_url}/api/catalog/{category}/{uuid}/credit/"
+        )
+        if isinstance(data, dict):
+            return data
+        return None
+
+    async def async_get_similar(self, uuid: str, token: str) -> Optional[dict]:
+        """异步获取单条相似推荐（需 OAuth2 Bearer token）。"""
+        if not uuid or not token:
+            return None
+        resp = await AsyncRequestUtils(accept_type="application/json", proxies=self.proxies).request(
+            "get",
+            f"{self.base_url}/api/catalog/item/{uuid}/similar",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        if resp is None or getattr(resp, "status_code", 0) != 200:
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------ #
     # 解析 / 映射
@@ -165,6 +221,56 @@ class NeoDBHelper:
         return _CATEGORY_TO_MTYPE.get(category, MediaType.UNKNOWN)
 
     @staticmethod
+    def credit_to_actors(credit: Optional[dict]) -> List[dict]:
+        """
+        把 NeoDB credit 端点返回的演职员列表映射为 MoviePilot 详情页演员表结构。
+        每个 actor dict 需含 name / character / profile_path（前端演员表渲染用）。
+        """
+        out: List[dict] = []
+        if not isinstance(credit, dict):
+            return out
+        for c in credit.get("data") or []:
+            if not isinstance(c, dict):
+                continue
+            person = c.get("person") or {}
+            name = person.get("display_name") or c.get("name") or ""
+            if not name:
+                continue
+            character = c.get("character_name") or ""
+            avatar = person.get("cover_image_url") or ""
+            out.append(
+                {
+                    "id": person.get("uuid") or c.get("id"),
+                    "name": name,
+                    "character": character,
+                    "profile_path": avatar,
+                }
+            )
+        return out
+
+    @staticmethod
+    def similar_to_text(similar: Optional[dict], limit: int = 10) -> str:
+        """
+        把 NeoDB similar 端点返回的相似条目整理成可注入详情页简介的文本块。
+        详情页 API 模型无独立的 recommend/similar 字段，故以文本形式追加到 overview。
+        """
+        items = []
+        if isinstance(similar, dict):
+            items = similar.get("data") or []
+        elif isinstance(similar, list):
+            items = similar
+        lines = []
+        for it in items[:limit]:
+            if not isinstance(it, dict):
+                continue
+            t = it.get("display_title") or it.get("title") or ""
+            if t:
+                lines.append(f"- {t}")
+        if not lines:
+            return ""
+        return "🎬 NeoDB 相似推荐：\n" + "\n".join(lines)
+
+    @staticmethod
     def item_to_mediainfo(item: dict) -> MediaInfo:
         """
         把 NeoDB 条目转换为 MediaInfo。
@@ -181,13 +287,18 @@ class NeoDBHelper:
         mi.title = item.get("display_title") or item.get("title") or ""
         year = item.get("year")
         if year is not None:
-            try:
-                mi.year = int(year)
-            except (TypeError, ValueError):
-                pass
+            # MediaInfo.year 字段类型为 str，必须转换为字符串，
+            # 否则详情接口返回时触发 ResponseValidationError -> HTTP 500。
+            mi.year = str(year)
         cover = item.get("cover_image_url")
         if cover:
             mi.cover = cover
+            # 探索/推荐列表卡片通常优先取 poster_path；这里把可用的封面同步到
+            # poster_path，避免列表缩略图因 poster_path 为空而不显示。
+            # 详情页仍会由核心的 obtain_images 用 TMDB/fanart/douban 图片覆盖，
+            # 若 TMDB 海报路径失效，本封面也能作为兜底。
+            if not mi.poster_path:
+                mi.poster_path = cover
         rating = item.get("rating")
         if rating is not None:
             try:
