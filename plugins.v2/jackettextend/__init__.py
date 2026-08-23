@@ -166,7 +166,8 @@ class JackettExtend(_PluginBase):
             "use_cat": self._use_cat,
         })
 
-    def search_torrents(self, site: dict, keyword: str, mtype: Optional[MediaType] = None, page: Optional[int] = 0) -> \
+    def search_torrents(self, site: dict, keyword: str = None, mtype: Optional[MediaType] = None,
+                        page: Optional[int] = 0, cat=None) -> \
             List[
                 TorrentInfo]:
         """
@@ -178,7 +179,7 @@ class JackettExtend(_PluginBase):
         :reutrn: 资源列表
         """
         results = []
-        if not site or not keyword:
+        if not site:
             return results
         if site.get("name", "").split("-")[0] != self.plugin_name:
             return results
@@ -201,7 +202,7 @@ class JackettExtend(_PluginBase):
             params = {
                 "apikey": self._api_key,
                 "t": "search",
-                "q": keyword,
+                "q": keyword if keyword and keyword != "None" else "",
             }
             # 分类过滤：多数公开索引器不支持 torznab 的 cat=2000/5000，
             # 强制携带会让 Jackett 返回空 <channel> 导致搜索无结果。
@@ -334,6 +335,12 @@ class JackettExtend(_PluginBase):
             # 插件劫持永不触发，最终由系统 torznab 不带 apikey 直查 -> 永远返回空。
             # 因此必须同时注册异步方法名（复用同一同步实现，由引擎在异步路径用线程池执行）。
             "async_search_torrents": self.search_torrents,
+            # 订阅刷新/浏览（refresh_torrents）也走插件劫持：系统 chain.torrents.browse()
+            # -> refresh_torrents() -> run_module("refresh_torrents")。若不注册该键，系统会
+            # 回退到默认 search_torrents（SiteSpider），而本插件注册的站点 domain 是
+            # jackett_extend.xxx 假域名、且无 search 配置，SiteSpider 直接返回空 ->
+            # 订阅刷新永远 0 秒空。注册后由本插件带 apikey 直查 Jackett torznab。
+            "refresh_torrents": self.search_torrents,
         }
 
     def get_api(self) -> List[Dict[str, Any]]:
@@ -357,6 +364,7 @@ class JackettExtend(_PluginBase):
         """
         if not url:
             return []
+        logger.info(f"【{self.plugin_name}】__parse_torznab_xml 请求: {url}")
         try:
             ret = RequestUtils(timeout=60).get_res(url,
                                                    proxies=settings.PROXY if self._proxy else None)
@@ -364,23 +372,28 @@ class JackettExtend(_PluginBase):
             logger.error(str(e))
             return []
         if not ret or not ret.text:
+            logger.warning(f"【{self.plugin_name}】torznab 返回空 (ret={bool(ret)}, text_len={len(ret.text) if ret else 0})")
             return []
         xmls = ret.text
+        logger.info(f"【{self.plugin_name}】torznab 返回 XML 长度: {len(xmls)}")
         torrents = []
         try:
             # 解析XML
             dom_tree = xml.dom.minidom.parseString(xmls)
             root_node = dom_tree.documentElement
             items = root_node.getElementsByTagName("item")
+            logger.info(f"【{self.plugin_name}】torznab 解析到 item 数: {len(items)}")
             for item in items:
                 try:
                     # 标题
                     title = DomUtils.tag_value(item, "title", default="")
                     if not title:
+                        logger.warning(f"【{self.plugin_name}】item 无 title，跳过")
                         continue
                     # 种子链接
                     enclosure = DomUtils.tag_value(item, "enclosure", "url", default="")
                     if not enclosure:
+                        logger.warning(f"【{self.plugin_name}】item 无 enclosure，跳过: {title[:40]}")
                         continue
                     # 描述
                     description = DomUtils.tag_value(item, "description", default="")
@@ -396,6 +409,9 @@ class JackettExtend(_PluginBase):
                     seeders = 0
                     # 下载数
                     peers = 0
+                    # 上传/下载因子
+                    uploadvolumefactor = None
+                    downloadvolumefactor = None
                     # imdbid
                     imdbid = ""
 
@@ -425,7 +441,8 @@ class JackettExtend(_PluginBase):
                         peers=peers,
                         site_name=self.jackett_domain,
                         page_url=page_url,
-                        imdbid=imdbid
+                        uploadvolumefactor=uploadvolumefactor if 'uploadvolumefactor' in dir() else None,
+                        downloadvolumefactor=downloadvolumefactor if 'downloadvolumefactor' in dir() else None,
                     )
                     torrents.append(tmp_dict)
                 except Exception as e:
