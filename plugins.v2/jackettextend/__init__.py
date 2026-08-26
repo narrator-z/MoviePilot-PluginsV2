@@ -428,11 +428,17 @@ class JackettExtend(_PluginBase):
                         if name == "peers":
                             peers = int(str(value).strip() or 0)
                         if name == "downloadvolumefactor":
-                            downloadvolumefactor = value
-                            if float(downloadvolumefactor) == 0:
+                            try:
+                                downloadvolumefactor = float(value)
+                            except (TypeError, ValueError):
+                                downloadvolumefactor = None
+                            if downloadvolumefactor == 0:
                                 freeleech = True
                         if name == "uploadvolumefactor":
-                            uploadvolumefactor = value
+                            try:
+                                uploadvolumefactor = float(value)
+                            except (TypeError, ValueError):
+                                uploadvolumefactor = None
                         if name == "imdbid":
                             imdbid = value
 
