@@ -3,7 +3,7 @@
     "name": "JackettExtend",
     "description": "扩展检索以支持 Jackett 站点资源",
     "labels": "索引器,Jackett",
-    "version": "6.0.0",
+    "version": "6.0.1",
     "icon": "Jackett_A.png",
     "author": "narrator-z",
     "level": 1,

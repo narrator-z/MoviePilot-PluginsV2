@@ -32,7 +32,7 @@ class JackettExtend(_PluginBase):
     # 插件图标
     plugin_icon = "Jackett_A.png"
     # 插件版本
-    plugin_version = "6.0.0"
+    plugin_version = "6.0.1"
     # 插件作者
     plugin_author = "narrator-z"
     # 作者主页
@@ -399,6 +399,10 @@ class JackettExtend(_PluginBase):
                     description = DomUtils.tag_value(item, "description", default="")
                     # 种子大小
                     size = DomUtils.tag_value(item, "size", default=0)
+                    try:
+                        size = float(size)
+                    except (TypeError, ValueError):
+                        size = 0.0
                     # 种子页面
                     page_url = DomUtils.tag_value(item, "comments", default="")
                     # 发布时间
@@ -420,9 +424,9 @@ class JackettExtend(_PluginBase):
                         name = torznab_attr.getAttribute('name')
                         value = torznab_attr.getAttribute('value')
                         if name == "seeders":
-                            seeders = value
+                            seeders = int(str(value).strip() or 0)
                         if name == "peers":
-                            peers = value
+                            peers = int(str(value).strip() or 0)
                         if name == "downloadvolumefactor":
                             downloadvolumefactor = value
                             if float(downloadvolumefactor) == 0:
