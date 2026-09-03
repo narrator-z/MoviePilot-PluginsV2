@@ -85,5 +85,89 @@
       "0.2.0": "接入 V3 原生探索媒体源、系统智能助手标题清理、可选原生整理链和完成后媒体库刷新；保留串行下载与 STRM。",
       "0.1.0": "首版：读取 LunaTV-config，串行搜索苹果 CMS 源，支持订阅队列、本地 m3u8 下载和 STRM。"
     }
+  },
+  "JackettExtend": {
+    "name": "JackettExtend",
+    "description": "扩展检索以支持 Jackett 站点资源",
+    "labels": "索引器,Jackett",
+    "version": "6.0.2",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/Jackett_A.png",
+    "author": "narrator-z",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "6.0.2": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。"
+    }
+  },
+  "StuckDownloadGuard": {
+    "name": "下载守卫",
+    "description": "监控下载任务，长期0速度则降级排至队尾并自动切换下载源/种子（订阅链重搜或跨索引器重搜更优种子并替换），连续无效则停止清理",
+    "labels": "下载管理,监控,队列",
+    "version": "1.1.0",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/Qbittorrent_A.png",
+    "author": "narrator-z",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "1.1.0": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。"
+    }
+  },
+  "ChineseSubFinder": {
+    "name": "ChineseSubFinder",
+    "description": "整理入库时通知 ChineseSubFinder 下载字幕（修复 API 失败、增加连接测试与诊断）",
+    "labels": "字幕,下载,ChineseSubFinder",
+    "version": "6.0.2",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/chinesesubfinder.png",
+    "author": "narrator-z",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "6.0.2": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。"
+    }
+  },
+  "ProwlarrExtend": {
+    "name": "ProwlarrExtend",
+    "description": "扩展检索以支持Prowlarr站点资源",
+    "labels": "索引器,Prowlarr",
+    "version": "6.0.0",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/Prowlarr.png",
+    "author": "narrator-z",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "6.0.0": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。"
+    }
+  },
+  "NeoDBSource": {
+    "name": "NeoDB源",
+    "description": "让探索、推荐和媒体识别支持 NeoDB 数据源（电影/剧集/动画）。",
+    "labels": "数据源,NeoDB,探索,推荐,识别",
+    "version": "1.0.4",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/neodb.png",
+    "author": "narrator-z",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "1.0.4": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。"
+    }
+  },
+  "JackettIndexer": {
+    "name": "Jackett索引器",
+    "description": "集成Jackett索引器搜索，支持Torznab协议多站点搜索。仅索引私有和半公开站点。",
+    "labels": "索引器,Jackett",
+    "version": "6.0.0",
+    "icon": "https://raw.githubusercontent.com/narrator-z/MoviePilot-Plugins/main/icons/Jackett_A.png",
+    "author": "Claude",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {
+      "6.0.0": "迁移至 V3 插件格式（package.v3.json + plugins.v3/），声明最低系统版本 >=3.0.0；沿用既有代码经 V3 兼容层加载，无需改动。补充 V3 市场索引条目（此前仅存在于 plugins.v2 目录、未在 v2 清单登记）。"
+    }
   }
 }
