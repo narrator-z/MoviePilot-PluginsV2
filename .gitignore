@@ -10,7 +10,11 @@ __pycache__/
 .Python
 build/
 develop-eggs/
+# V3 插件的前端构建产物（模块联邦 remoteEntry.js 及其 JS/CSS chunk）必须入库：
+# 安装后的插件缺失 dist/ 会导致前端模块联邦加载 404 / 被令牌门禁 401→403。
+# 仅放行 plugins.v3 下的 dist，其余 dist 仍按默认忽略。
 dist/
+!plugins.v3/**/dist/
 downloads/
 eggs/
 .eggs/
